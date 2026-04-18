@@ -11,6 +11,11 @@ import type { Asset, PortfolioSnapshot, PriceCache, Transaction, TransactionWith
 const dataDirectory = path.join(process.cwd(), "data");
 const databasePath = path.join(dataDirectory, "portfolio.db");
 
+// Create data directory if it doesn't exist
+if (!fs.existsSync(dataDirectory)) {
+  fs.mkdirSync(dataDirectory, { recursive: true });
+}
+
 declare global {
   var portfolioDb: ReturnType<typeof createClient> | undefined;
   var schemaInitialized: boolean;
@@ -20,7 +25,7 @@ declare global {
 function getDb() {
   if (!global.portfolioDb) {
     global.portfolioDb = createClient({
-      url: process.env.DATABASE_URL || "file:/data/portfolio.db",
+      url: process.env.DATABASE_URL || "file:/app/data/portfolio.db",
     });
   }
   return global.portfolioDb;
