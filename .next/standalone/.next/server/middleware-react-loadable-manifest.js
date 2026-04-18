@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST='{"app/dashboard/page.tsx -> recharts":{"id":6929,"files":["static/chunks/929.e4c9ab3302e9ed3d.js"]},"app/portfolio/[ticker]/page.tsx -> recharts":{"id":6929,"files":["static/chunks/929.e4c9ab3302e9ed3d.js"]}}';
