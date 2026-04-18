@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { updateAsset, deleteAsset, getTransactionCountByAsset, deleteTransaction, getTransactions } from "@/lib/db";
+import { updateAsset, deleteAsset, getTransactionCountByAsset, deleteTransaction, getTransactions, initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -12,6 +12,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    await initDb();
     const id = Number(params.id);
     const body = await request.json();
     const { name, assetClass, currency } = body;
@@ -24,7 +25,7 @@ export async function PUT(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to update asset:", error);
-    return NextResponse.json({ error: "Failed to update asset" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update asset" }, { status: 500 });
   }
 }
 
@@ -34,6 +35,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    await initDb();
     const id = Number(params.id);
     
     await deleteAsset(id);
@@ -45,6 +47,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete asset:", error);
-    return NextResponse.json({ error: "Failed to delete asset" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to delete asset" }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getAssets, getLastCachedPrice } from "@/lib/db";
+import { getAssets, getLastCachedPrice, initDb } from "@/lib/db";
 import { fetchPrice } from "@/lib/prices";
 import type { Asset } from "@/types";
 
@@ -12,6 +12,7 @@ export async function GET(
   { params }: { params: { ticker: string } }
 ) {
   try {
+    await initDb();
     const { ticker } = params;
     const url = new URL(request.url);
     const assetClass = url.searchParams.get("assetClass");
@@ -35,10 +36,10 @@ export async function GET(
         return NextResponse.json({ price: cached.price, currency: cached.currency });
       }
       
-      return NextResponse.json({ error: "Failed to fetch price" }, { status: 500 });
+      return NextResponse.json({ price: null, error: error instanceof Error ? error.message : "Failed to fetch price" }, { status: 200 });
     }
   } catch (error) {
     console.error("Failed to fetch price:", error);
-    return NextResponse.json({ error: "Failed to fetch price" }, { status: 500 });
+    return NextResponse.json({ price: null, error: error instanceof Error ? error.message : "Failed to fetch price" }, { status: 200 });
   }
 }

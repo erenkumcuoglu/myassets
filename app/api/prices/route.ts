@@ -1,24 +1,38 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 10;
 
 import { NextResponse } from "next/server";
+import { initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 async function fetchYahooPrice(ticker: string): Promise<number | null> {
   try {
-    const response = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`,
-      { 
-        next: { revalidate: 0 },
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        },
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    
+    try {
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`,
+        { 
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          },
+        }
+      );
+      clearTimeout(timeout);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
+      return price ? Number(price) : null;
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.warn(`Yahoo fetch timeout for ${ticker}`);
       }
-    );
-    if (!response.ok) return null;
-    const data = await response.json();
-    const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
-    return price ? Number(price) : null;
+      return null;
+    }
   } catch (error) {
     return null;
   }
@@ -77,6 +91,7 @@ async function fetchSilverUsd(): Promise<number> {
 
 export async function GET() {
   try {
+    await initDb();
     // Fetch all rates independently - don't let one failure break the whole response
     const [usdTry, goldUsd, silverUsd] = await Promise.all([
       fetchUsdTryRate(),
@@ -106,6 +121,7 @@ export async function GET() {
       gramGoldTry: 0,
       gramSilverTry: 0,
       fetchedAt: new Date().toISOString(),
-    });
+      error: error instanceof Error ? error.message : 'Price unavailable',
+    }, { status: 200 });
   }
 }

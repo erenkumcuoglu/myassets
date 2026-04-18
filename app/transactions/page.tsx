@@ -38,10 +38,12 @@ export default function TransactionsPage() {
       ]);
       const transactionsData = await transactionsRes.json();
       const assetsData = await assetsRes.json();
-      setTransactions(transactionsData);
-      setAssets(assetsData);
+      setTransactions(Array.isArray(transactionsData) ? transactionsData : []);
+      setAssets(Array.isArray(assetsData) ? assetsData : []);
     } catch (error) {
       console.error("Failed to fetch data:", error);
+      setTransactions([]);
+      setAssets([]);
     } finally {
       setLoading(false);
     }

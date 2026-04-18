@@ -1,12 +1,13 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getPortfolioSnapshot } from "@/lib/db";
+import { getPortfolioSnapshot, initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
+    await initDb();
     const snapshot = await getPortfolioSnapshot();
     return NextResponse.json(snapshot);
   } catch (error) {

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getPositionQuantity } from "@/lib/db";
+import { getPositionQuantity, initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -10,6 +10,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    await initDb();
     const id = Number(params.id);
     
     const quantity = await getPositionQuantity(id);
@@ -17,6 +18,6 @@ export async function GET(
     return NextResponse.json({ quantity });
   } catch (error) {
     console.error("Failed to get position:", error);
-    return NextResponse.json({ quantity: 0 });
+    return NextResponse.json({ quantity: 0, error: error instanceof Error ? error.message : "Failed to get position" });
   }
 }

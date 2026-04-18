@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,7 @@ type TefasResponse = {
 
 export async function POST(request: Request) {
   try {
+    await initDb();
     const body = await request.json();
     const { fonkod } = body;
 
@@ -59,6 +61,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ price: numericPrice });
   } catch (error) {
     console.error("TEFAS API error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
   }
 }

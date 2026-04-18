@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { updateTransaction, deleteTransaction } from "@/lib/db";
+import { updateTransaction, deleteTransaction, initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    await initDb();
     const id = Number(params.id);
     const body = await request.json();
     const { type, quantity, price, currency, date, notes } = body;
@@ -24,7 +25,7 @@ export async function PUT(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to update transaction:", error);
-    return NextResponse.json({ error: "Failed to update transaction" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update transaction" }, { status: 500 });
   }
 }
 
@@ -33,6 +34,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    await initDb();
     const id = Number(params.id);
     
     await deleteTransaction(id);
@@ -44,6 +46,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete transaction:", error);
-    return NextResponse.json({ error: "Failed to delete transaction" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to delete transaction" }, { status: 500 });
   }
 }

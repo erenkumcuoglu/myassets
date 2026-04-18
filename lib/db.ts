@@ -130,6 +130,47 @@ async function ensureSchema() {
   await schemaInitPromise;
 }
 
+// Export initDb for API routes to call
+export async function initDb() {
+  const dataDir = path.join(process.cwd(), 'data')
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true })
+  }
+  const db = getDb()
+  await db.execute(`CREATE TABLE IF NOT EXISTS assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    name TEXT NOT NULL,
+    asset_class TEXT NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'TRY',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await db.execute(`CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id INTEGER REFERENCES assets(id),
+    type TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    price REAL NOT NULL,
+    currency TEXT NOT NULL,
+    date DATE NOT NULL,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await db.execute(`CREATE TABLE IF NOT EXISTS price_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id INTEGER REFERENCES assets(id),
+    price REAL NOT NULL,
+    currency TEXT NOT NULL,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await db.execute(`CREATE TABLE IF NOT EXISTS fx_rates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pair TEXT NOT NULL,
+    rate REAL NOT NULL,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+}
+
 function mapAsset(row: Record<string, unknown>): Asset {
   return {
     id: Number(row.id),

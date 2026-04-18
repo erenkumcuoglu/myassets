@@ -49,7 +49,19 @@ function DashboardContent() {
     try {
       const portfolioRes = await fetch("/api/portfolio");
       const portfolioData = await portfolioRes.json();
-      setSnapshot(portfolioData);
+      setSnapshot({
+        positions: Array.isArray(portfolioData?.positions) ? portfolioData.positions : [],
+        history: Array.isArray(portfolioData?.history) ? portfolioData.history : [],
+        summary: portfolioData?.summary || {
+          totalValue: 0,
+          totalCostBasis: 0,
+          netInvested: 0,
+          realizedPnL: 0,
+          unrealizedPnL: 0,
+          totalReturn: 0,
+          totalReturnPercent: 0
+        }
+      });
     } catch (error) {
       console.error("Failed to fetch portfolio snapshot:", error);
       setSnapshot({ 

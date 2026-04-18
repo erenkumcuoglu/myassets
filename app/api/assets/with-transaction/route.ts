@@ -1,13 +1,14 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { insertAsset, insertTransaction } from "@/lib/db";
+import { insertAsset, insertTransaction, initDb } from "@/lib/db";
 import { fetchPrice } from "@/lib/prices";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    await initDb();
     const body = await request.json();
     const { ticker, name, assetClass, currency, transaction } = body;
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Failed to create asset with transaction:", error);
     return NextResponse.json(
-      { message: "Failed to create asset" },
+      { message: error instanceof Error ? error.message : "Failed to create asset" },
       { status: 500 }
     );
   }

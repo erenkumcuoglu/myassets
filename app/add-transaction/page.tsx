@@ -124,7 +124,8 @@ export default function AddTransactionPage() {
     try {
       // Check if asset with same ticker already exists
       const assetsResponse = await fetch("/api/assets");
-      const assets = await assetsResponse.json();
+      const assetsData = await assetsResponse.json();
+      const assets = Array.isArray(assetsData) ? assetsData : [];
       const existingAsset = assets.find((a: { ticker: string }) => a.ticker === formData.ticker.toUpperCase());
 
       let assetId: number;

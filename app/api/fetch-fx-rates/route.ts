@@ -7,6 +7,8 @@ export const runtime = "nodejs";
 
 export async function POST() {
   try {
+    const { initDb } = await import("@/lib/db");
+    await initDb();
     const usdTryRate = await fetchUsdTryRate();
     const eurTryRate = await fetchEurTryRate();
 

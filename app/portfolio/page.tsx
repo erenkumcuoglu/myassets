@@ -51,9 +51,10 @@ export default function PortfolioPage() {
     try {
       const response = await fetch("/api/portfolio");
       const data = await response.json();
-      setPositions(data.positions);
+      setPositions(Array.isArray(data?.positions) ? data.positions : []);
     } catch (error) {
       console.error("Failed to fetch positions:", error);
+      setPositions([]);
     } finally {
       setLoading(false);
     }
