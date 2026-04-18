@@ -2,11 +2,11 @@ import {
   getAssets,
   getLastCachedPrice,
   insertPriceCacheEntry,
+  insertFxRate,
 } from "@/lib/db";
 import type { Asset } from "@/types";
 
 const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
-const TEFAS_URL = "https://www.tefas.gov.tr/api/DB/BindHistoryInfo";
 
 type YahooChartResponse = {
   chart?: {
@@ -24,32 +24,20 @@ type YahooChartResponse = {
   };
 };
 
-type TefasRow = {
-  FIYAT?: number | string;
-  FONKODU?: string;
-};
-
 type TefasResponse = {
-  data?: TefasRow[];
+  price?: number;
+  error?: string;
 };
-
-function formatTodayForTefas() {
-  const today = new Date();
-  const day = String(today.getDate()).padStart(2, "0");
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const year = today.getFullYear();
-  return `${day}.${month}.${year}`;
-}
 
 function getCommodityYahooSymbol(asset: Asset) {
   const normalizedTicker = asset.ticker.toUpperCase();
 
   if (normalizedTicker === "XAU") {
-    return "XAU=X";
+    return "GC=F";
   }
 
   if (normalizedTicker === "XAG") {
-    return "XAG=X";
+    return "SI=F";
   }
 
   if (normalizedTicker.includes("=") || normalizedTicker.includes("=F")) {
@@ -57,6 +45,13 @@ function getCommodityYahooSymbol(asset: Asset) {
   }
 
   return normalizedTicker;
+}
+
+// Conversion factors for precious metals
+const TROY_OUNCE_TO_GRAMS = 31.1035;
+
+function convertToGrams(pricePerTroyOunce: number): number {
+  return pricePerTroyOunce / TROY_OUNCE_TO_GRAMS;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -102,81 +97,163 @@ async function fetchYahooPrice(symbol: string) {
 }
 
 export async function fetchUsdTryRate() {
-  return fetchYahooPrice("USDTRY=X");
+  try {
+    const rate = await fetchYahooPrice("USDTRY=X");
+    await insertFxRate("USDTRY", rate);
+    return rate;
+  } catch (error) {
+    console.warn("[prices] Failed to fetch USD/TRY rate, using fallback 1.0");
+    return 1.0;
+  }
+}
+
+export async function fetchEurTryRate() {
+  try {
+    const rate = await fetchYahooPrice("EURTRY=X");
+    await insertFxRate("EURTRY", rate);
+    return rate;
+  } catch (error) {
+    console.warn("[prices] Failed to fetch EUR/TRY rate, using fallback 1.0");
+    return 1.0;
+  }
 }
 
 async function fetchTefasPrice(fundCode: string) {
-  const today = formatTodayForTefas();
-  const payload = await fetchJson<TefasResponse>(TEFAS_URL, {
-    method: "POST",
-    body: JSON.stringify({
-      fontip: "YAT",
-      bastarih: today,
-      bittarih: today,
-      fonkod: fundCode.toUpperCase(),
-    }),
-  });
+  try {
+    const formatDate = (date: Date) => {
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      return `${day}.${month}.${year}`;
+    };
 
-  const rawPrice = payload.data?.[0]?.FIYAT;
-  const numericPrice =
-    typeof rawPrice === "string" ? Number(rawPrice.replace(",", ".")) : rawPrice;
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-  if (typeof numericPrice !== "number" || Number.isNaN(numericPrice)) {
-    throw new Error(`No TEFAS price found for ${fundCode}`);
+    const dates = [today, yesterday];
+
+    for (const date of dates) {
+      const dateStr = formatDate(date);
+      const body = new URLSearchParams({
+        fontip: "YAT",
+        bastarih: dateStr,
+        bittarih: dateStr,
+        fonkod: fundCode.toUpperCase(),
+      });
+
+      const response = await fetch("https://www.tefas.gov.tr/api/DB/BindHistoryInfo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Referer": "https://www.tefas.gov.tr",
+          "Origin": "https://www.tefas.gov.tr",
+        },
+        cache: "no-store",
+        body,
+      });
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+        const rawPrice = data.data[0]?.FIYAT;
+        const numericPrice =
+          typeof rawPrice === "string" ? Number(rawPrice.replace(",", ".")) : rawPrice;
+
+        if (typeof numericPrice === "number" && !Number.isNaN(numericPrice) && numericPrice > 0) {
+          return numericPrice;
+        }
+      }
+    }
+
+    throw new Error(`No valid TEFAS price found for ${fundCode}`);
+  } catch (error) {
+    throw new Error(`TEFAS price fetch failed for ${fundCode}: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
-
-  return numericPrice;
 }
 
-async function fetchLivePrice(asset: Asset) {
-  switch (asset.assetClass) {
-    case "BIST":
-      return fetchYahooPrice(`${asset.ticker}.IS`);
-    case "NASDAQ":
-    case "FUND_US":
-      return fetchYahooPrice(asset.ticker);
-    case "FUND_TR":
-      return fetchTefasPrice(asset.ticker);
-    case "COMMODITY": {
-      const basePrice = await fetchYahooPrice(getCommodityYahooSymbol(asset));
+async function fetchCommodityPriceWithFallback(asset: Asset): Promise<number> {
+  const normalizedTicker = asset.ticker.toUpperCase();
+  const symbols = [];
 
+  // Build list of symbols to try in order
+  if (normalizedTicker === "XAU") {
+    symbols.push("GC=F", "XAU=X", "GOLD");
+  } else if (normalizedTicker === "XAG") {
+    symbols.push("SI=F", "XAG=X", "SILVER");
+  } else {
+    symbols.push(getCommodityYahooSymbol(asset));
+  }
+
+  // Try each symbol
+  for (const symbol of symbols) {
+    try {
+      const price = await fetchYahooPrice(symbol);
+      
+      // Convert from troy ounces to grams
+      const pricePerGram = price / TROY_OUNCE_TO_GRAMS;
+      
+      // Convert to TRY if needed
       if (asset.currency === "TRY") {
         const usdTry = await fetchUsdTryRate();
-        return basePrice * usdTry;
+        return pricePerGram * usdTry;
       }
+      
+      return pricePerGram;
+    } catch (error) {
+      console.warn(`[prices] Failed to fetch price for ${symbol}, trying next fallback`);
+      continue;
+    }
+  }
 
-      return basePrice;
+  throw new Error(`All fallback sources failed for ${asset.ticker}`);
+}
+
+async function fetchLivePrice(asset: Asset): Promise<{ price: number; currency: string }> {
+  switch (asset.assetClass) {
+    case "BIST":
+      return { price: await fetchYahooPrice(`${asset.ticker}.IS`), currency: "TRY" };
+    case "NASDAQ":
+    case "FUND_US":
+      return { price: await fetchYahooPrice(asset.ticker), currency: "USD" };
+    case "FUND_TR":
+      // TEFAS always returns TRY prices
+      return { price: await fetchTefasPrice(asset.ticker), currency: "TRY" };
+    case "COMMODITY": {
+      const price = await fetchCommodityPriceWithFallback(asset);
+      return { price, currency: asset.currency };
     }
     default:
       throw new Error(`Unsupported asset class for ${asset.ticker}`);
   }
 }
 
-function getFallbackPrice(asset: Asset) {
-  const cached = getLastCachedPrice(asset.id);
+async function getFallbackPrice(asset: Asset): Promise<{ price: number; currency: string }> {
+  const cached = await getLastCachedPrice(asset.id);
   if (cached) {
-    return cached.price;
+    return { price: cached.price, currency: cached.currency };
   }
 
-  return 0;
+  return { price: 0, currency: asset.currency };
 }
 
-export async function fetchPrice(asset: Asset): Promise<number> {
+export async function fetchPrice(asset: Asset): Promise<{ price: number; currency: string }> {
   try {
     return await fetchLivePrice(asset);
   } catch (error) {
-    const fallback = getFallbackPrice(asset);
+    const fallback = await getFallbackPrice(asset);
     const message = error instanceof Error ? error.message : "Unknown error";
 
     console.warn(
-      `[prices] Failed to fetch live price for ${asset.ticker}; using cached price ${fallback}. ${message}`,
+      `[prices] Failed to fetch live price for ${asset.ticker}; using cached price ${fallback.price}. ${message}`,
     );
 
     return fallback;
   }
 }
 
-export async function fetchAllPrices(assets: Asset[]): Promise<Map<number, number>> {
+export async function fetchAllPrices(assets: Asset[]): Promise<Map<number, { price: number; currency: string }>> {
   const entries = await Promise.all(
     assets.map(async (asset) => [asset.id, await fetchPrice(asset)] as const),
   );
@@ -185,19 +262,56 @@ export async function fetchAllPrices(assets: Asset[]): Promise<Map<number, numbe
 }
 
 export async function refreshPriceCache(): Promise<void> {
-  const assets = getAssets();
+  const assets = await getAssets();
   const prices = await fetchAllPrices(assets);
 
   for (const asset of assets) {
-    const price = prices.get(asset.id);
+    const priceData = prices.get(asset.id);
 
-    if (typeof price !== "number" || Number.isNaN(price) || price <= 0) {
+    if (!priceData || typeof priceData.price !== "number" || Number.isNaN(priceData.price) || priceData.price <= 0) {
       console.warn(
         `[prices] Skipping cache update for ${asset.ticker}; no valid price available.`,
       );
       continue;
     }
 
-    insertPriceCacheEntry(asset.id, price, asset.currency);
+    await insertPriceCacheEntry(asset.id, priceData.price, priceData.currency as "TRY" | "USD" | "EUR");
+  }
+}
+
+// Helper functions for precious metals gram prices
+export async function fetchGramGoldPrice(): Promise<number> {
+  try {
+    const goldAsset: Asset = {
+      id: 0,
+      ticker: "XAU",
+      name: "Gold",
+      assetClass: "COMMODITY",
+      currency: "USD",
+      createdAt: "",
+    };
+    const pricePerOunce = await fetchCommodityPriceWithFallback(goldAsset);
+    return convertToGrams(pricePerOunce);
+  } catch (error) {
+    console.error("[prices] Failed to fetch gram gold price:", error);
+    throw error;
+  }
+}
+
+export async function fetchGramSilverPrice(): Promise<number> {
+  try {
+    const silverAsset: Asset = {
+      id: 0,
+      ticker: "XAG",
+      name: "Silver",
+      assetClass: "COMMODITY",
+      currency: "USD",
+      createdAt: "",
+    };
+    const pricePerOunce = await fetchCommodityPriceWithFallback(silverAsset);
+    return convertToGrams(pricePerOunce);
+  } catch (error) {
+    console.error("[prices] Failed to fetch gram silver price:", error);
+    throw error;
   }
 }

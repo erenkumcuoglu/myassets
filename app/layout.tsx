@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import "@fontsource/ibm-plex-sans/400.css";
-import "@fontsource/ibm-plex-sans/500.css";
-import "@fontsource/ibm-plex-sans/600.css";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import "./globals.css";
-import { AppShell } from "@/components/app-shell";
+import { CurrencyProvider } from "@/contexts/CurrencyContext";
+import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
   title: "Portfolio Pilot",
@@ -18,9 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full">
-        <AppShell>{children}</AppShell>
+    <html lang="en" className="h-full antialiased font-sans">
+      <body className="min-h-full bg-stone-50">
+        <CurrencyProvider>
+          <Navbar />
+          <main className="pt-16">{children}</main>
+        </CurrencyProvider>
       </body>
     </html>
   );

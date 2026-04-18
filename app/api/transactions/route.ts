@@ -1,22 +1,23 @@
 import { NextResponse } from "next/server";
-import { insertTransaction } from "@/lib/db";
-import { TransactionInputSchema } from "@/types";
+import { getTransactions, insertTransaction } from "@/lib/db";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const transactions = await getTransactions();
+    return NextResponse.json(transactions);
+  } catch (error) {
+    console.error("Failed to fetch transactions:", error);
+    return NextResponse.json({ error: "Failed to fetch transactions" }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const parsed = TransactionInputSchema.safeParse(body);
-
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Please provide valid transaction details." },
-      { status: 400 },
-    );
-  }
-
   try {
-    const transaction = insertTransaction(parsed.data);
+    const body = await request.json();
+    const transaction = await insertTransaction(body);
     return NextResponse.json({ transaction }, { status: 201 });
   } catch (error) {
     return NextResponse.json(

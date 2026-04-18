@@ -48,7 +48,7 @@ const allocationColors: Record<string, string> = {
   COMMODITY: "#dc2626",
 };
 
-function CurrencyBadge({ currency }: { currency: "TRY" | "USD" }) {
+function CurrencyBadge({ currency }: { currency: "TRY" | "USD" | "EUR" }) {
   return (
     <span className="rounded-full border border-stone-200 bg-stone-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-600">
       {currency}
@@ -80,10 +80,11 @@ function SummaryCard({
               ? "text-rose-700"
               : "text-stone-950"
         }`}
+        suppressHydrationWarning
       >
         {value}
       </p>
-      <p className="mt-3 text-sm leading-6 text-stone-500">{helper}</p>
+      <p className="mt-3 text-sm leading-6 text-stone-500" suppressHydrationWarning>{helper}</p>
     </article>
   );
 }
@@ -269,7 +270,7 @@ export function DashboardOverview({
                     {entry.assetClass}
                   </span>
                 </div>
-                <span className="finance-mono text-sm text-stone-950">
+                <span className="finance-mono text-sm text-stone-950" suppressHydrationWarning>
                   {formatCompactCurrencyByCode(entry.value, "TRY")}
                 </span>
               </div>

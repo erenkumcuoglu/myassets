@@ -1,19 +1,6 @@
-import { z } from "zod";
-
-export const AssetClassSchema = z.enum([
-  "BIST",
-  "NASDAQ",
-  "FUND_TR",
-  "FUND_US",
-  "COMMODITY",
-]);
-
-export const CurrencySchema = z.enum(["TRY", "USD"]);
-export const TransactionTypeSchema = z.enum(["BUY", "SELL"]);
-
-export type AssetClass = z.infer<typeof AssetClassSchema>;
-export type Currency = z.infer<typeof CurrencySchema>;
-export type TransactionType = z.infer<typeof TransactionTypeSchema>;
+export type AssetClass = "BIST" | "NASDAQ" | "FUND_TR" | "FUND_US" | "COMMODITY";
+export type Currency = "TRY" | "USD" | "EUR";
+export type TransactionType = "BUY" | "SELL";
 
 export interface Asset {
   id: number;
@@ -36,6 +23,10 @@ export interface Transaction {
   createdAt: string;
 }
 
+export interface TransactionWithAsset extends Transaction {
+  asset: Asset;
+}
+
 export interface PriceCache {
   id: number;
   assetId: number;
@@ -44,8 +35,11 @@ export interface PriceCache {
   fetchedAt: string;
 }
 
-export interface TransactionWithAsset extends Transaction {
-  asset: Asset;
+export interface FxRate {
+  id: number;
+  pair: string;
+  rate: number;
+  fetchedAt: string;
 }
 
 export interface Position {
@@ -60,7 +54,7 @@ export interface Position {
   realizedPnL: number;
 }
 
-export type PortfolioSummary = {
+export interface PortfolioSummary {
   totalValue: number;
   totalCostBasis: number;
   netInvested: number;
@@ -68,29 +62,17 @@ export type PortfolioSummary = {
   unrealizedPnL: number;
   totalReturn: number;
   totalReturnPercent: number;
-};
+}
 
-export type PortfolioHistoryPoint = {
+export interface PortfolioHistoryPoint {
   date: string;
   dateLabel: string;
   value: number;
   invested: number;
-};
+}
 
-export type PortfolioSnapshot = {
+export interface PortfolioSnapshot {
   positions: Position[];
   history: PortfolioHistoryPoint[];
   summary: PortfolioSummary;
-};
-
-export const TransactionInputSchema = z.object({
-  assetId: z.number().int().positive(),
-  type: TransactionTypeSchema,
-  quantity: z.number().positive(),
-  price: z.number().positive(),
-  currency: CurrencySchema,
-  date: z.string().min(1),
-  notes: z.string().optional().nullable().default(""),
-});
-
-export type TransactionInput = z.infer<typeof TransactionInputSchema>;
+}
