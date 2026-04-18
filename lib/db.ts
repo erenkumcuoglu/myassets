@@ -1,3 +1,7 @@
+if (typeof window !== 'undefined') {
+  throw new Error('db.ts must only be used server-side')
+}
+
 import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@libsql/client";

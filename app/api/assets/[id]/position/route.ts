@@ -1,8 +1,9 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { getPositionQuantity } from "@/lib/db";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,

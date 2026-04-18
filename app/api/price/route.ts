@@ -1,8 +1,9 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import type { AssetClass } from "@/types";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 async function fetchYahooPrice(ticker: string): Promise<number | null> {
   try {

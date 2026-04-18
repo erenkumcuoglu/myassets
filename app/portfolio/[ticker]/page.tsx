@@ -1,18 +1,20 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { formatNumberWithCommas } from "@/lib/format";
 import type { Asset, TransactionWithAsset } from "@/types";
 
-const LineChart = dynamic(() => import('recharts').then(m => m.LineChart), { ssr: false });
-const Line = dynamic(() => import('recharts').then(m => m.Line), { ssr: false });
-const XAxis = dynamic(() => import('recharts').then(m => m.XAxis), { ssr: false });
-const YAxis = dynamic(() => import('recharts').then(m => m.YAxis), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip), { ssr: false });
-const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false });
-const Legend = dynamic(() => import('recharts').then(m => m.Legend), { ssr: false });
+const LineChart = nextDynamic(() => import('recharts').then(m => m.LineChart), { ssr: false });
+const Line = nextDynamic(() => import('recharts').then(m => m.Line), { ssr: false });
+const XAxis = nextDynamic(() => import('recharts').then(m => m.XAxis), { ssr: false });
+const YAxis = nextDynamic(() => import('recharts').then(m => m.YAxis), { ssr: false });
+const Tooltip = nextDynamic(() => import('recharts').then(m => m.Tooltip), { ssr: false });
+const ResponsiveContainer = nextDynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false });
+const Legend = nextDynamic(() => import('recharts').then(m => m.Legend), { ssr: false });
 
 type RealizedPair = {
   buyDate: string;

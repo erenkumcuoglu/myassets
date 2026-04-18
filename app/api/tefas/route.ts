@@ -1,7 +1,8 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 const TEFAS_URL = "https://www.tefas.gov.tr/api/DB/BindHistoryInfo";
 

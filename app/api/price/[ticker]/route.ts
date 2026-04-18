@@ -1,10 +1,11 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { getAssets, getLastCachedPrice } from "@/lib/db";
 import { fetchPrice } from "@/lib/prices";
 import type { Asset } from "@/types";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,

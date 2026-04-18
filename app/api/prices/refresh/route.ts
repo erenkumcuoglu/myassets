@@ -1,9 +1,10 @@
+export const dynamic = "force-dynamic";
+
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { refreshPriceCache } from "@/lib/prices";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 export async function POST() {
   try {

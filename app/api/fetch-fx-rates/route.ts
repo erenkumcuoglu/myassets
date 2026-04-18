@@ -1,8 +1,9 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { fetchUsdTryRate, fetchEurTryRate } from "@/lib/prices";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 export async function POST() {
   try {

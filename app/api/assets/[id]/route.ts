@@ -1,9 +1,10 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { updateAsset, deleteAsset, getTransactionCountByAsset, deleteTransaction, getTransactions } from "@/lib/db";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 // PUT - Update asset
 export async function PUT(
