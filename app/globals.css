@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f4f0e8;
+  --foreground: #1c1917;
+  --card: rgba(255, 255, 255, 0.8);
+  --border: rgba(28, 25, 23, 0.12);
+  --muted: #6b645d;
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --danger: #b91c1c;
+  --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+html {
+  background:
+    radial-gradient(circle at top, rgba(15, 118, 110, 0.14), transparent 30%),
+    linear-gradient(180deg, #fcfaf6 0%, var(--background) 100%);
+}
+
+body {
+  min-height: 100vh;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.18);
+}
+
+.finance-mono {
+  font-family: var(--font-mono);
+}
