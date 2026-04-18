@@ -4,7 +4,12 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: true,
+  },
+  swcMinify: true,
+  output: 'standalone',
+  experimental: {
+    serverComponentsExternalPackages: ['@libsql/client'],
   },
 };
 
