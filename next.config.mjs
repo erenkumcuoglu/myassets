@@ -7,7 +7,6 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   swcMinify: true,
-  output: 'standalone',
   experimental: {
     serverComponentsExternalPackages: ['@libsql/client'],
   },

@@ -1,5 +1,0 @@
-[phases.build]
-cmds = ["echo 'Skipping build - using prebuilt'"]
-
-[start]
-cmd = "node .next/standalone/server.js"

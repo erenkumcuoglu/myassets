@@ -4,13 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
-    "start": "node .next/standalone/server.js",
+    "build": "NODE_OPTIONS='--max-old-space-size=512' next build",
+    "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
     "db:init": "tsx scripts/init-db.ts",
-    "postinstall": "",
-    "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public"
+    "postinstall": ""
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",
