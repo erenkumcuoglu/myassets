@@ -3,9 +3,29 @@ export const maxDuration = 10;
 
 import { NextResponse } from "next/server";
 import type { AssetClass } from "@/types";
-import { initDb } from "@/lib/db";
+import { initDb, getLastCachedPrice } from "@/lib/db";
 
 export const runtime = "nodejs";
+
+const COMMODITY_TICKER_MAP: Record<string, string[]> = {
+  // Gold
+  'GOLD': ['GC=F', 'XAUUSD=X', 'GLD'],
+  'XAU': ['GC=F', 'XAUUSD=X', 'GLD'],
+  'ALTIN': ['GC=F', 'XAUUSD=X', 'GLD'],
+  'GAU': ['GC=F', 'XAUUSD=X', 'GLD'],
+  // Silver
+  'SILVER': ['SI=F', 'XAGUSD=X', 'SLV'],
+  'XAG': ['SI=F', 'XAGUSD=X', 'SLV'],
+  'GUMUS': ['SI=F', 'XAGUSD=X', 'SLV'],
+  'AUG': ['SI=F', 'XAGUSD=X', 'SLV'],
+  'GUM': ['SI=F', 'XAGUSD=X', 'SLV'],
+  // Platinum
+  'PLAT': ['PL=F'],
+  'XPT': ['PL=F'],
+  // Oil
+  'OIL': ['CL=F', 'BZ=F'],
+  'PETROL': ['CL=F', 'BZ=F'],
+};
 
 async function fetchYahooPrice(ticker: string): Promise<number | null> {
   try {
@@ -140,19 +160,24 @@ export async function GET(request: Request) {
         currency = "USD";
         break;
       case "COMMODITY":
-        // Handle gold and silver specifically
+        // Use ticker mapping for Turkish commodity names
         const upperTicker = ticker.toUpperCase();
-        if (upperTicker === "GC=F" || upperTicker === "XAUUSD=X" || upperTicker === "GLD") {
-          price = await fetchYahooPrice("GC=F");
-          if (!price) price = await fetchYahooPrice("XAUUSD=X");
-          if (!price) price = await fetchYahooPrice("GLD");
-        } else if (upperTicker === "SI=F" || upperTicker === "XAGUSD=X" || upperTicker === "SLV") {
-          price = await fetchYahooPrice("SI=F");
-          if (!price) price = await fetchYahooPrice("XAGUSD=X");
-          if (!price) price = await fetchYahooPrice("SLV");
+        let symbols: string[] = [];
+        
+        if (COMMODITY_TICKER_MAP[upperTicker]) {
+          symbols = COMMODITY_TICKER_MAP[upperTicker];
+        } else if (upperTicker.includes("=") || upperTicker.includes("=F")) {
+          symbols = [upperTicker];
         } else {
-          price = await fetchYahooPrice(ticker.toUpperCase());
+          symbols = [upperTicker];
         }
+        
+        // Try each symbol in order
+        for (const symbol of symbols) {
+          price = await fetchYahooPrice(symbol);
+          if (price !== null) break;
+        }
+        
         currency = "USD";
         break;
       default:
@@ -161,6 +186,21 @@ export async function GET(request: Request) {
     }
 
     if (price === null) {
+      // Try to get cached price as fallback
+      try {
+        const assets = await import("@/lib/db").then(m => m.getAssets());
+        const asset = assets.find(a => a.ticker.toUpperCase() === ticker.toUpperCase());
+        if (asset) {
+          const cached = await getLastCachedPrice(asset.id);
+          if (cached && cached.price > 0) {
+            console.warn(`[API] Using cached price ${cached.price} for ${ticker}`);
+            return NextResponse.json({ price: cached.price, currency: cached.currency, error: 'Using cached price' }, { status: 200 });
+          }
+        }
+      } catch (e) {
+        console.warn('[API] Failed to fetch cached price:', e);
+      }
+      
       return NextResponse.json({ price: null, currency, error: 'Price unavailable' }, { status: 200 });
     }
 
