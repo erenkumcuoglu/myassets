@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const TEFAS_URL = "https://www.tefas.gov.tr/api/DB/BindHistoryInfo";
 
 type TefasRow = {
@@ -10,9 +13,6 @@ type TefasRow = {
 type TefasResponse = {
   data?: TefasRow[];
 };
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
