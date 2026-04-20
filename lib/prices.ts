@@ -18,7 +18,6 @@ import {
  insertFxRate,
 } from "@/lib/db";
 import type { Asset } from "@/types";
-import { fetchTefasPriceWithPuppeteer } from "@/lib/tefas";
  
 const TROY_OUNCE_TO_GRAMS = 31.1035;
 const TD_BASE = "https://api.twelvedata.com";
@@ -286,10 +285,70 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
  
 // ---------------------------------------------------------------------------
-// TEFAS / Turkish mutual funds — TEFAS.gov.tr (via Puppeteer)
+// Turkish mutual funds — Fintables.com (primary) with TEFAS fallback
 // ---------------------------------------------------------------------------
+async function fetchFintablesPrice(fundCode: string): Promise<number> {
+  const code = fundCode.toUpperCase();
+  const urls = [
+    `https://fintables.com/api/funds/${code}`,
+    `https://fintables.com/api/v2/funds/${code}`,
+  ];
+  
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Referer": "https://fintables.com/",
+    "Origin": "https://fintables.com",
+  };
+  
+  for (const url of urls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers,
+        cache: "no-store",
+      });
+      clearTimeout(timeout);
+      
+      if (!res.ok) continue;
+      
+      const text = await res.text();
+      
+      // Skip Cloudflare challenge pages
+      if (text.includes("Just a moment") || text.includes("challenge-platform")) {
+        console.warn(`[Fintables] Cloudflare challenge for ${code}`);
+        continue;
+      }
+      
+      if (text.trim().startsWith("<")) continue;
+      
+      const data = JSON.parse(text) as {
+        price?: number;
+        lastPrice?: number;
+        nav?: number;
+        data?: { price?: number; lastPrice?: number; nav?: number };
+      };
+      
+      const price = data.price ?? data.lastPrice ?? data.nav ?? data.data?.price ?? data.data?.lastPrice ?? data.data?.nav;
+      
+      if (typeof price === "number" && price > 0) {
+        console.log(`[Fintables] Price ${price} for ${code}`);
+        return price;
+      }
+    } catch (e) {
+      console.warn(`[Fintables] ${code} failed at ${url}:`, e);
+    }
+  }
+  
+  throw new Error(`Fintables: no price for ${code}`);
+}
+
 async function fetchTefasPrice(fundCode: string): Promise<number> {
-  return fetchTefasPriceWithPuppeteer(fundCode);
+  return fetchFintablesPrice(fundCode);
 }
  
 // ---------------------------------------------------------------------------
