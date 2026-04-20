@@ -108,12 +108,42 @@ function extractYahooPrice(payload: YahooChartResponse, fallbackTicker: string) 
   return price;
 }
 
-async function fetchYahooPrice(symbol: string) {
-  const payload = await fetchJson<YahooChartResponse>(
-    `${YAHOO_CHART_URL}/${encodeURIComponent(symbol)}`,
-  );
+export async function fetchYahooPrice(symbol: string): Promise<number> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
 
-  return extractYahooPrice(payload, symbol);
+  try {
+    const response = await fetch(
+      `${YAHOO_CHART_URL}/${encodeURIComponent(symbol)}`,
+      {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        cache: "no-store",
+      }
+    );
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    // Check for HTML response
+    const text = await response.text();
+    if (text.trim().startsWith('<') || text.trim().startsWith('<!')) {
+      throw new Error('HTML response received instead of JSON — likely blocked');
+    }
+
+    const payload = JSON.parse(text) as YahooChartResponse;
+    return extractYahooPrice(payload, symbol);
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Yahoo fetch timeout for ${symbol}`);
+    }
+    throw err;
+  }
 }
 
 export async function fetchUsdTryRate() {
@@ -138,7 +168,7 @@ export async function fetchEurTryRate() {
   }
 }
 
-async function fetchTefasPrice(fundCode: string, assetId?: number): Promise<number> {
+export async function fetchTefasPrice(fundCode: string, assetId?: number): Promise<number> {
   // Helper to check if response is HTML
   const checkHtmlResponse = async (response: Response): Promise<void> => {
     const text = await response.text();
@@ -333,7 +363,14 @@ async function fetchCommodityPriceWithFallback(asset: Asset): Promise<number> {
 
         if (!response.ok) continue;
 
-        const data = await response.json();
+        // Check for HTML response
+        const text = await response.text();
+        if (text.trim().startsWith('<') || text.trim().startsWith('<!')) {
+          console.warn(`[Commodity] HTML response for ${symbol}`);
+          continue;
+        }
+
+        const data = JSON.parse(text);
         const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
         
         if (typeof price === "number" && !Number.isNaN(price) && price > 0) {

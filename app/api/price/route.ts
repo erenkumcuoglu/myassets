@@ -3,7 +3,8 @@ export const maxDuration = 10;
 
 import { NextResponse } from "next/server";
 import type { AssetClass } from "@/types";
-import { initDb, getLastCachedPrice } from "@/lib/db";
+import { initDb, getLastCachedPrice, getAssets } from "@/lib/db";
+import { fetchYahooPrice, fetchTefasPrice } from "@/lib/prices";
 
 export const runtime = "nodejs";
 
@@ -27,103 +28,20 @@ const COMMODITY_TICKER_MAP: Record<string, string[]> = {
   'PETROL': ['CL=F', 'BZ=F'],
 };
 
-async function fetchYahooPrice(ticker: string): Promise<number | null> {
+async function fetchYahooPriceWithTimeout(ticker: string): Promise<number | null> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    
-    try {
-      const response = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`,
-        { 
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          },
-        }
-      );
-      clearTimeout(timeout);
-      if (!response.ok) return null;
-      const data = await response.json();
-      const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
-      return price ? Number(price) : null;
-    } catch (err) {
-      clearTimeout(timeout);
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.warn(`Yahoo fetch timeout for ${ticker}`);
-      }
-      return null;
-    }
+    return await fetchYahooPrice(ticker);
   } catch (error) {
+    console.warn(`[API] Yahoo fetch failed for ${ticker}:`, error);
     return null;
   }
 }
 
-async function fetchTefasPrice(fundCode: string): Promise<number | null> {
+async function fetchTefasPriceWithTimeout(fundCode: string, assetId?: number): Promise<number | null> {
   try {
-    const formatDate = (date: Date) => {
-      const day = String(date.getDate()).padStart(2, "0");
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const year = date.getFullYear();
-      return `${day}.${month}.${year}`;
-    };
-
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const dates = [today, yesterday];
-
-    for (const date of dates) {
-      const dateStr = formatDate(date);
-      const body = new URLSearchParams({
-        fontip: "YAT",
-        bastarih: dateStr,
-        bittarih: dateStr,
-        fonkod: fundCode.toUpperCase(),
-      });
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      
-      try {
-        const response = await fetch("https://www.tefas.gov.tr/api/DB/BindHistoryInfo", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": "https://www.tefas.gov.tr",
-            "Origin": "https://www.tefas.gov.tr",
-          },
-          body,
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-
-        if (!response.ok) continue;
-
-        const data = await response.json();
-        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-          const rawPrice = data.data[0]?.FIYAT;
-          const numericPrice =
-            typeof rawPrice === "string" ? Number(rawPrice.replace(",", ".")) : rawPrice;
-
-          if (typeof numericPrice === "number" && !Number.isNaN(numericPrice) && numericPrice > 0) {
-            return numericPrice;
-          }
-        }
-      } catch (err) {
-        clearTimeout(timeout);
-        if (err instanceof Error && err.name === 'AbortError') {
-          console.warn(`TEFAS fetch timeout for ${fundCode}`);
-          continue;
-        }
-        continue;
-      }
-    }
-
-    return null;
+    return await fetchTefasPrice(fundCode, assetId);
   } catch (error) {
-    console.error("TEFAS API error:", error);
+    console.warn(`[API] Fund fetch failed for ${fundCode}:`, error);
     return null;
   }
 }
@@ -144,19 +62,22 @@ export async function GET(request: Request) {
 
     switch (assetClass) {
       case "BIST":
-        price = await fetchYahooPrice(`${ticker.toUpperCase()}.IS`);
+        price = await fetchYahooPriceWithTimeout(`${ticker.toUpperCase()}.IS`);
         currency = "TRY";
         break;
       case "NASDAQ":
-        price = await fetchYahooPrice(ticker.toUpperCase());
+        price = await fetchYahooPriceWithTimeout(ticker.toUpperCase());
         currency = "USD";
         break;
       case "FUND_TR":
-        price = await fetchTefasPrice(ticker);
+        // Get asset ID for cached price fallback
+        const assets = await getAssets();
+        const asset = assets.find(a => a.ticker.toUpperCase() === ticker.toUpperCase());
+        price = await fetchTefasPriceWithTimeout(ticker, asset?.id);
         currency = "TRY";
         break;
       case "FUND_US":
-        price = await fetchYahooPrice(ticker.toUpperCase());
+        price = await fetchYahooPriceWithTimeout(ticker.toUpperCase());
         currency = "USD";
         break;
       case "COMMODITY":
@@ -174,21 +95,21 @@ export async function GET(request: Request) {
         
         // Try each symbol in order
         for (const symbol of symbols) {
-          price = await fetchYahooPrice(symbol);
+          price = await fetchYahooPriceWithTimeout(symbol);
           if (price !== null) break;
         }
         
         currency = "USD";
         break;
       default:
-        price = await fetchYahooPrice(ticker.toUpperCase());
+        price = await fetchYahooPriceWithTimeout(ticker.toUpperCase());
         currency = "USD";
     }
 
     if (price === null) {
       // Try to get cached price as fallback
       try {
-        const assets = await import("@/lib/db").then(m => m.getAssets());
+        const assets = await getAssets();
         const asset = assets.find(a => a.ticker.toUpperCase() === ticker.toUpperCase());
         if (asset) {
           const cached = await getLastCachedPrice(asset.id);
