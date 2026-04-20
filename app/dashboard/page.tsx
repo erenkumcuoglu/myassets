@@ -159,13 +159,17 @@ function DashboardContent() {
     return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
   });
 
-  const allocationData = (snapshot?.positions ?? []).reduce((acc: Array<{ name: AssetClass; value: number }>, position) => {
+  const allocationData = (snapshot?.positions ?? []).reduce((acc: Array<{ name: AssetClass; value: number; fill: string }>, position) => {
     const existing = acc.find((item) => item.name === position.asset.assetClass);
     const convertedValue = convertAmount(position.currentValue, position.asset.currency);
     if (existing) {
       existing.value += convertedValue;
     } else {
-      acc.push({ name: position.asset.assetClass, value: convertedValue });
+      acc.push({ 
+        name: position.asset.assetClass, 
+        value: convertedValue,
+        fill: ASSET_CLASS_COLORS[position.asset.assetClass]
+      });
     }
     return acc;
   }, []).filter(item => item.value > 0) || [];
@@ -376,12 +380,14 @@ function DashboardContent() {
                 cx="50%"
                 cy="50%"
                 outerRadius={100}
+                innerRadius={0}
+                paddingAngle={2}
+                fill="fill"
+                stroke="#fff"
+                strokeWidth={2}
                 label={({ name, percent }) => `${name} ${percent ? formatNumberWithCommas(percent * 100, 0) : 0}%`}
-              >
-                {allocationData.map((entry) => (
-                  <Cell key={entry.name} fill={ASSET_CLASS_COLORS[entry.name]} />
-                ))}
-              </Pie>
+                isAnimationActive={false}
+              />
               <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
