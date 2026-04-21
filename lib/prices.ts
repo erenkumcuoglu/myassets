@@ -285,70 +285,99 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
  
 // ---------------------------------------------------------------------------
-// Turkish mutual funds — Fintables.com (primary) with TEFAS fallback
+// Turkish mutual funds — TEFAS.gov.tr (official source)
 // ---------------------------------------------------------------------------
-async function fetchFintablesPrice(fundCode: string): Promise<number> {
+async function fetchTefasPrice(fundCode: string): Promise<number> {
   const code = fundCode.toUpperCase();
-  const urls = [
-    `https://fintables.com/api/funds/${code}`,
-    `https://fintables.com/api/v2/funds/${code}`,
-  ];
+  const url = `https://www.tefas.gov.tr/FonAnaliz.aspx?FonKod=${code}`;
   
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
+  // Use a persistent cookie jar approach
+  const headers: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Referer": "https://fintables.com/",
-    "Origin": "https://fintables.com",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "max-age=0",
   };
   
-  for (const url of urls) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers,
-        cache: "no-store",
-      });
-      clearTimeout(timeout);
-      
-      if (!res.ok) continue;
-      
-      const text = await res.text();
-      
-      // Skip Cloudflare challenge pages
-      if (text.includes("Just a moment") || text.includes("challenge-platform")) {
-        console.warn(`[Fintables] Cloudflare challenge for ${code}`);
-        continue;
-      }
-      
-      if (text.trim().startsWith("<")) continue;
-      
-      const data = JSON.parse(text) as {
-        price?: number;
-        lastPrice?: number;
-        nav?: number;
-        data?: { price?: number; lastPrice?: number; nav?: number };
-      };
-      
-      const price = data.price ?? data.lastPrice ?? data.nav ?? data.data?.price ?? data.data?.lastPrice ?? data.data?.nav;
-      
-      if (typeof price === "number" && price > 0) {
-        console.log(`[Fintables] Price ${price} for ${code}`);
-        return price;
-      }
-    } catch (e) {
-      console.warn(`[Fintables] ${code} failed at ${url}:`, e);
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers,
+      cache: "no-store",
+      redirect: "follow",
+    });
+    clearTimeout(timeout);
+    
+    if (!res.ok) {
+      throw new Error(`TEFAS HTTP ${res.status} for ${code}`);
     }
+    
+    const html = await res.text();
+    
+    // Check for bot protection
+    if (html.includes("Request Rejected") || html.includes("Your support ID is")) {
+      throw new Error(`TEFAS bot protection triggered for ${code}`);
+    }
+    
+    // Check for valid fund page
+    if (!html.includes("FonAnaliz") && !html.includes("Son Fiyat")) {
+      throw new Error(`TEFAS: Invalid page for ${code}`);
+    }
+    
+    // Extract price - look for pattern: <li>Son Fiyat (TL)<br/><span>X,XXXXXX</span>
+    // Try multiple patterns
+    const patterns = [
+      /Son Fiyat \(TL\)[^<]*<br\s*\/?>\s*<span>([0-9]+,[0-9]+)<\/span>/i,
+      /<li>[^<]*Fiyat[^<]*<br\s*\/?>\s*<span>([0-9]+,[0-9]+)<\/span>/i,
+      /Fiyat \(TL\).*?<span>([0-9]+,[0-9]+)<\/span>/is,
+      /<span>([0-9]{1,5},[0-9]{2,8})<\/span>/g,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match) {
+        const priceStr = match[1] || match[0];
+        const cleanPrice = priceStr.replace(/<[^>]*>/g, '').trim();
+        if (cleanPrice.includes(',')) {
+          const price = parseFloat(cleanPrice.replace(",", "."));
+          if (price > 0 && price < 1000000) {
+            console.log(`[TEFAS] Price ${price} for ${code}`);
+            return price;
+          }
+        }
+      }
+    }
+    
+    // Fallback: extract any number that looks like a fund price
+    const allMatches = html.match(/<span>([0-9]+,[0-9]{2,})<\/span>/g);
+    if (allMatches) {
+      for (const match of allMatches) {
+        const numMatch = match.match(/([0-9]+,[0-9]+)/);
+        if (numMatch) {
+          const price = parseFloat(numMatch[1].replace(",", "."));
+          if (price > 0 && price < 1000000) {
+            console.log(`[TEFAS] Fallback price ${price} for ${code}`);
+            return price;
+          }
+        }
+      }
+    }
+    
+    throw new Error(`TEFAS: Could not extract price for ${code}`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[TEFAS] ${code}:`, msg);
+    throw e;
   }
-  
-  throw new Error(`Fintables: no price for ${code}`);
-}
-
-async function fetchTefasPrice(fundCode: string): Promise<number> {
-  return fetchFintablesPrice(fundCode);
 }
  
 // ---------------------------------------------------------------------------
