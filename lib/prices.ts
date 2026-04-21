@@ -285,50 +285,68 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
  
 // ---------------------------------------------------------------------------
-// Turkish mutual funds — TEFAS.gov.tr via internal API endpoint
+// Turkish mutual funds — Cloudflare Worker proxy (bypasses Railway IP blocks)
 // ---------------------------------------------------------------------------
-async function fetchTefasPrice(fundCode: string): Promise<number> {
+async function fetchTefasViaProxy(fundCode: string): Promise<number> {
+  const proxyUrl = process.env.TEFAS_PROXY_URL;
+  if (!proxyUrl) throw new Error("TEFAS_PROXY_URL not set");
+
+  const url = `${proxyUrl}?code=${encodeURIComponent(fundCode.toUpperCase())}`;
+  const res = await fetchWithTimeout(url, 8000);
+
+  if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+
+  const text = await res.text();
+  const data = JSON.parse(text);
+
+  if (data.error) throw new Error(`Proxy error: ${data.error}`);
+  if (!data.price || data.price <= 0) throw new Error("No valid price from proxy");
+
+  console.log(`[TEFAS-Proxy] Fetched price ${data.price} for ${fundCode.toUpperCase()}`);
+  return data.price;
+}
+
+// Fallback: Fintables.com (legacy, may be blocked by Cloudflare)
+// ---------------------------------------------------------------------------
+async function fetchFintablesPrice(fundCode: string): Promise<number> {
   const code = fundCode.toUpperCase();
-  
-  const today = new Date();
-  const day = String(today.getDate()).padStart(2, "0");
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const year = today.getFullYear();
-  const todayStr = `${day}.${month}.${year}`;
-  
-  const TEFAS_URL = "https://www.tefas.gov.tr/api/DB/BindHistoryInfo";
-  
-  const response = await fetch(TEFAS_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json",
-      "Origin": "https://www.tefas.gov.tr",
-      "Referer": `https://www.tefas.gov.tr/FonAnaliz.aspx?FonKod=${code}`,
-    },
-    body: JSON.stringify({
-      fontip: "YAT",
-      bastarih: todayStr,
-      bittarih: todayStr,
-      fonkod: code,
-    }),
-  });
+  const urls = [
+    `https://fintables.com/api/funds/${code}`,
+    `https://fintables.com/api/v2/funds/${code}`,
+  ];
 
-  if (!response.ok) {
-    throw new Error(`TEFAS API HTTP ${response.status} for ${code}`);
+  for (const url of urls) {
+    try {
+      const res = await fetchWithTimeout(url, 6000);
+      if (!res.ok) continue;
+
+      const text = await res.text();
+      if (text.trim().startsWith("<")) {
+        console.warn(`[Fintables] HTML response for ${code}`);
+        continue;
+      }
+
+      const data = JSON.parse(text) as {
+        price?: number;
+        lastPrice?: number;
+        nav?: number;
+        data?: { price?: number; lastPrice?: number; nav?: number };
+      };
+      const price =
+        data.price ??
+        data.lastPrice ??
+        data.nav ??
+        data.data?.price ??
+        data.data?.lastPrice ??
+        data.data?.nav;
+
+      if (typeof price === "number" && price > 0) return price;
+    } catch (e) {
+      console.warn(`[Fintables] ${code} at ${url}:`, e);
+    }
   }
 
-  const payload = await response.json() as { data?: Array<{ FIYAT?: number | string }> };
-  const rawPrice = payload.data?.[0]?.FIYAT;
-  const numericPrice = typeof rawPrice === "string" ? Number(rawPrice.replace(",", ".")) : rawPrice;
-
-  if (typeof numericPrice !== "number" || Number.isNaN(numericPrice) || numericPrice <= 0) {
-    throw new Error(`No valid price for ${code}`);
-  }
-
-  console.log(`[TEFAS-API] Fetched price ${numericPrice} for ${code}`);
-  return numericPrice;
+  throw new Error(`Fintables: no valid price for ${fundCode}`);
 }
  
 // ---------------------------------------------------------------------------
@@ -381,7 +399,27 @@ async function fetchLivePrice(
      return { price: await fetchNasdaqPrice(asset.ticker), currency: "USD" };
  
    case "FUND_TR":
-     return { price: await fetchTefasPrice(asset.ticker), currency: "TRY" };
+     // PRIMARY: Cloudflare Worker proxy
+     // FALLBACK: Fintables (legacy)
+     // FINAL FALLBACK: cached price
+     let fundPrice: number;
+     try {
+       fundPrice = await fetchTefasViaProxy(asset.ticker);
+     } catch (proxyErr) {
+       console.warn(`[prices] Proxy failed for ${asset.ticker}, trying Fintables:`, proxyErr);
+       try {
+         fundPrice = await fetchFintablesPrice(asset.ticker);
+       } catch (fintablesErr) {
+         console.warn(`[prices] Fintables failed for ${asset.ticker}, using cache:`, fintablesErr);
+         const cached = await getLastCachedPrice(asset.id);
+         if (cached && cached.price > 0) {
+           console.warn(`[prices] Cached fallback for ${asset.ticker}: ${cached.price}`);
+           return { price: cached.price, currency: cached.currency };
+         }
+         throw new Error(`All sources failed for ${asset.ticker}, no cache available`);
+       }
+     }
+     return { price: fundPrice, currency: "TRY" };
  
    case "COMMODITY":
      return { price: await fetchCommodityPriceTryPerGram(asset), currency: "TRY" };
