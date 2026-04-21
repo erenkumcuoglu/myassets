@@ -18,6 +18,7 @@ import {
  insertFxRate,
 } from "@/lib/db";
 import type { Asset } from "@/types";
+import { fetchTefasPriceWithPuppeteer } from "@/lib/tefas";
  
 const TROY_OUNCE_TO_GRAMS = 31.1035;
 const TD_BASE = "https://api.twelvedata.com";
@@ -285,99 +286,10 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
  
 // ---------------------------------------------------------------------------
-// Turkish mutual funds — TEFAS.gov.tr (official source)
+// Turkish mutual funds — TEFAS.gov.tr via Puppeteer (bot protection bypass)
 // ---------------------------------------------------------------------------
 async function fetchTefasPrice(fundCode: string): Promise<number> {
-  const code = fundCode.toUpperCase();
-  const url = `https://www.tefas.gov.tr/FonAnaliz.aspx?FonKod=${code}`;
-  
-  // Use a persistent cookie jar approach
-  const headers: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Cache-Control": "max-age=0",
-  };
-  
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers,
-      cache: "no-store",
-      redirect: "follow",
-    });
-    clearTimeout(timeout);
-    
-    if (!res.ok) {
-      throw new Error(`TEFAS HTTP ${res.status} for ${code}`);
-    }
-    
-    const html = await res.text();
-    
-    // Check for bot protection
-    if (html.includes("Request Rejected") || html.includes("Your support ID is")) {
-      throw new Error(`TEFAS bot protection triggered for ${code}`);
-    }
-    
-    // Check for valid fund page
-    if (!html.includes("FonAnaliz") && !html.includes("Son Fiyat")) {
-      throw new Error(`TEFAS: Invalid page for ${code}`);
-    }
-    
-    // Extract price - look for pattern: <li>Son Fiyat (TL)<br/><span>X,XXXXXX</span>
-    // Try multiple patterns
-    const patterns = [
-      /Son Fiyat \(TL\)[^<]*<br\s*\/?>\s*<span>([0-9]+,[0-9]+)<\/span>/i,
-      /<li>[^<]*Fiyat[^<]*<br\s*\/?>\s*<span>([0-9]+,[0-9]+)<\/span>/i,
-      /Fiyat \(TL\).*?<span>([0-9]+,[0-9]+)<\/span>/is,
-      /<span>([0-9]{1,5},[0-9]{2,8})<\/span>/g,
-    ];
-    
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match) {
-        const priceStr = match[1] || match[0];
-        const cleanPrice = priceStr.replace(/<[^>]*>/g, '').trim();
-        if (cleanPrice.includes(',')) {
-          const price = parseFloat(cleanPrice.replace(",", "."));
-          if (price > 0 && price < 1000000) {
-            console.log(`[TEFAS] Price ${price} for ${code}`);
-            return price;
-          }
-        }
-      }
-    }
-    
-    // Fallback: extract any number that looks like a fund price
-    const allMatches = html.match(/<span>([0-9]+,[0-9]{2,})<\/span>/g);
-    if (allMatches) {
-      for (const match of allMatches) {
-        const numMatch = match.match(/([0-9]+,[0-9]+)/);
-        if (numMatch) {
-          const price = parseFloat(numMatch[1].replace(",", "."));
-          if (price > 0 && price < 1000000) {
-            console.log(`[TEFAS] Fallback price ${price} for ${code}`);
-            return price;
-          }
-        }
-      }
-    }
-    
-    throw new Error(`TEFAS: Could not extract price for ${code}`);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error(`[TEFAS] ${code}:`, msg);
-    throw e;
-  }
+  return fetchTefasPriceWithPuppeteer(fundCode);
 }
  
 // ---------------------------------------------------------------------------
