@@ -289,10 +289,17 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 // ---------------------------------------------------------------------------
 async function fetchTefasViaProxy(fundCode: string): Promise<number> {
   const proxyUrl = process.env.TEFAS_PROXY_URL;
+  console.log(`[DEBUG] TEFAS_PROXY_URL raw value: "${proxyUrl}"`);
+  console.log(`[DEBUG] TEFAS_PROXY_URL exists: ${!!proxyUrl}`);
+  console.log(`[DEBUG] TEFAS_PROXY_URL length: ${proxyUrl?.length}`);
+  
   if (!proxyUrl) throw new Error("TEFAS_PROXY_URL not set");
 
   const url = `${proxyUrl}?code=${encodeURIComponent(fundCode.toUpperCase())}`;
+  console.log(`[DEBUG] Constructed URL: "${url}"`);
+  
   const res = await fetchWithTimeout(url, 8000);
+  console.log(`[DEBUG] Proxy response status: ${res.status}`);
 
   if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
 
