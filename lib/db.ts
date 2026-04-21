@@ -397,30 +397,33 @@ export async function getLastCachedPrice(assetId: number): Promise<PriceCache | 
   return mapPriceCache(result.rows[0]);
 }
 
-export async function insertPriceCacheEntry(
-  assetId: number,
-  price: number,
-  currency: PriceCache["currency"],
-): Promise<PriceCache> {
+export async function insertPriceCacheEntry(assetId: number, price: number, currency: "TRY" | "USD" | "EUR") {
   await ensureSchema();
-  
+
   const db = getDb();
-  const result = await db.execute({
-    sql: `INSERT INTO price_cache (asset_id, price, currency)
-          VALUES (?, ?, ?)`,
+  await db.execute({
+    sql: `INSERT INTO price_cache (asset_id, price, currency, fetched_at)
+          VALUES (?, ?, ?, datetime('now'))`,
     args: [assetId, price, currency],
   });
+}
 
-  const insertId = result.lastInsertRowid ? Number(result.lastInsertRowid) : 0;
-  
-  const rowResult = await db.execute({
-    sql: `SELECT id, asset_id, price, currency, fetched_at
-          FROM price_cache
-          WHERE id = ?`,
-    args: [insertId],
+export async function clearPriceCache() {
+  await ensureSchema();
+
+  const db = getDb();
+  await db.execute({
+    sql: `DELETE FROM price_cache`,
   });
+}
 
-  return mapPriceCache(rowResult.rows[0]);
+export async function updateCommodityAssetCurrencies() {
+  await ensureSchema();
+
+  const db = getDb();
+  await db.execute({
+    sql: `UPDATE assets SET currency = 'TRY' WHERE asset_class = 'COMMODITY'`,
+  });
 }
 
 export async function getFxRates(): Promise<FxRate[]> {

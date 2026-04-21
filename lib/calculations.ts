@@ -112,7 +112,7 @@ export async function calculatePortfolioSnapshot(
       const priceCache = latestPrices.get(state.assetId);
       const latestPrice = priceCache?.price ?? state.lastKnownPrice;
       const priceCurrency = priceCache?.currency ?? state.asset.currency;
-      
+
       // Convert price to asset currency if they differ
       let convertedPrice = latestPrice;
       if (priceCurrency !== state.asset.currency) {

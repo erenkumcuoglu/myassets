@@ -6,7 +6,7 @@
 *  - BIST              → Twelve Data API (TICKER:BIST format)
 *  - COMMODITY         → Twelve Data API (XAU/USD, XAG/USD) → TRY/gram
 *  - FX (USDTRY/EURTRY)→ Twelve Data API
-*  - FUND_TR           → Fintables.com (no auth required)
+*  - FUND_TR           → TEFAS.gov.tr API (no auth required)
 *
 * All sources fall back to last cached price on failure.
 */
@@ -18,7 +18,6 @@ import {
  insertFxRate,
 } from "@/lib/db";
 import type { Asset } from "@/types";
-import { fetchTefasPriceWithPuppeteer } from "@/lib/tefas";
  
 const TROY_OUNCE_TO_GRAMS = 31.1035;
 const TD_BASE = "https://api.twelvedata.com";
@@ -286,10 +285,50 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
  
 // ---------------------------------------------------------------------------
-// Turkish mutual funds — TEFAS.gov.tr via Puppeteer (bot protection bypass)
+// Turkish mutual funds — TEFAS.gov.tr via internal API endpoint
 // ---------------------------------------------------------------------------
 async function fetchTefasPrice(fundCode: string): Promise<number> {
-  return fetchTefasPriceWithPuppeteer(fundCode);
+  const code = fundCode.toUpperCase();
+  
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, "0");
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const year = today.getFullYear();
+  const todayStr = `${day}.${month}.${year}`;
+  
+  const TEFAS_URL = "https://www.tefas.gov.tr/api/DB/BindHistoryInfo";
+  
+  const response = await fetch(TEFAS_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json",
+      "Origin": "https://www.tefas.gov.tr",
+      "Referer": `https://www.tefas.gov.tr/FonAnaliz.aspx?FonKod=${code}`,
+    },
+    body: JSON.stringify({
+      fontip: "YAT",
+      bastarih: todayStr,
+      bittarih: todayStr,
+      fonkod: code,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`TEFAS API HTTP ${response.status} for ${code}`);
+  }
+
+  const payload = await response.json() as { data?: Array<{ FIYAT?: number | string }> };
+  const rawPrice = payload.data?.[0]?.FIYAT;
+  const numericPrice = typeof rawPrice === "string" ? Number(rawPrice.replace(",", ".")) : rawPrice;
+
+  if (typeof numericPrice !== "number" || Number.isNaN(numericPrice) || numericPrice <= 0) {
+    throw new Error(`No valid price for ${code}`);
+  }
+
+  console.log(`[TEFAS-API] Fetched price ${numericPrice} for ${code}`);
+  return numericPrice;
 }
  
 // ---------------------------------------------------------------------------
