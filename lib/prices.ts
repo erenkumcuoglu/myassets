@@ -6,7 +6,7 @@
  *  - BIST              → Yahoo Finance
  *  - COMMODITY         → Yahoo Finance → TRY/gram
  *  - FX (USDTRY/EURTRY)→ Yahoo Finance
- *  - FUND_TR           → @firstthumb/tefas-api (fallback: fundfy.com → cache)
+ *  - FUND_TR           → /api/tefas-proxy (fallback: fundfy.com → cache)
  *
  * All sources fall back to last cached price on failure.
  */
@@ -146,22 +146,28 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Turkish mutual funds — @firstthumb/tefas-api (primary), fundfy.com (fallback)
+// Turkish mutual funds — /api/tefas-proxy (primary), fundfy.com (fallback)
 // ---------------------------------------------------------------------------
 
 async function fetchTefasPrice(asset: Asset): Promise<{ price: number; currency: string }> {
   const fundCode = asset.ticker.toUpperCase();
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
   
-  // PRIMARY: @firstthumb/tefas-api
-  try {
-    const tefas = await import("@firstthumb/tefas-api");
-    const result = await tefas.getFundPrice(fundCode);
-    if (result && result.price > 0) {
-      console.log(`[TEFAS-API] ${fundCode}: ${result.price} TL`);
-      return { price: result.price, currency: "TRY" };
+  // PRIMARY: Internal /api/tefas-proxy route (works when deployed in Turkey/Vercel)
+  if (baseUrl) {
+    try {
+      const url = `${baseUrl}/api/tefas-proxy?symbol=${encodeURIComponent(fundCode)}`;
+      const res = await fetchWithTimeout(url, 10000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.price > 0) {
+          console.log(`[TEFAS-PROXY] ${fundCode}: ${data.price} TL (date: ${data.date})`);
+          return { price: data.price, currency: "TRY" };
+        }
+      }
+    } catch (err) {
+      console.error(`[TEFAS-PROXY] Failed for ${fundCode}:`, err);
     }
-  } catch (err) {
-    console.error(`[TEFAS-API] Failed for ${fundCode}:`, err);
   }
   
   // FALLBACK 1: fundfy.com

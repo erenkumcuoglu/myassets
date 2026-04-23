@@ -1,4 +1,7 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/dashboard/page": "app/dashboard/page.js",
-  "/portfolio/page": "app/portfolio/page.js"
+  "/api/tefas-proxy/route": "app/api/tefas-proxy/route.js",
+  "/portfolio/page": "app/portfolio/page.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js"
 }
