@@ -211,7 +211,9 @@ export function DashboardOverview({
           />
         </div>
 
-        <RefreshPricesButton />
+        <RefreshPricesButton fundTrAssets={positions
+          .filter(p => p.asset.assetClass === "FUND_TR")
+          .map(p => ({ id: p.asset.id, ticker: p.asset.ticker, assetClass: p.asset.assetClass }))} />
       </div>
 
       <section className="grid gap-6 xl:grid-cols-2">

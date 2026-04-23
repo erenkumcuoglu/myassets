@@ -1,4 +1,4 @@
 {
-  "/portfolio/page": "app/portfolio/page.js",
-  "/dashboard/page": "app/dashboard/page.js"
+  "/api/refresh-prices/route": "app/api/refresh-prices/route.js",
+  "/api/save-tefas-price/route": "app/api/save-tefas-price/route.js"
 }
