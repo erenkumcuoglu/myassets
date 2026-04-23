@@ -2,8 +2,19 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { fetchTefasPriceFromBrowser } from "@/lib/tefas-client";
 
-export function RefreshPricesButton() {
+interface Asset {
+  id: number;
+  ticker: string;
+  assetClass: string;
+}
+
+interface RefreshPricesButtonProps {
+  fundTrAssets: Asset[];
+}
+
+export function RefreshPricesButton({ fundTrAssets }: RefreshPricesButtonProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -12,17 +23,58 @@ export function RefreshPricesButton() {
     setError(null);
 
     startTransition(async () => {
-      const response = await fetch("/api/prices/refresh", {
-        method: "POST",
-      });
+      try {
+        // Step 1: Server-side refresh for non-FUND_TR assets (Yahoo, BIST, etc.)
+        const serverResponse = await fetch("/api/prices/refresh", {
+          method: "POST",
+        });
 
-      if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
-        setError(payload.error ?? "Refresh failed.");
-        return;
+        if (!serverResponse.ok) {
+          const payload = (await serverResponse.json()) as { error?: string };
+          setError(payload.error ?? "Server refresh failed.");
+          return;
+        }
+
+        // Step 2: Client-side TEFAS fetch for FUND_TR assets (browser → tefas.gov.tr)
+        const failedFunds: string[] = [];
+        
+        for (const asset of fundTrAssets) {
+          try {
+            const result = await fetchTefasPriceFromBrowser(asset.ticker);
+            
+            if (result && result.price > 0) {
+              // Save to DB via API
+              const saveResponse = await fetch("/api/save-tefas-price", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  fundCode: asset.ticker,
+                  price: result.price,
+                  currency: "TRY",
+                }),
+              });
+
+              if (!saveResponse.ok) {
+                failedFunds.push(asset.ticker);
+              }
+            } else {
+              failedFunds.push(asset.ticker);
+            }
+          } catch (err) {
+            console.error(`[Refresh] Failed for ${asset.ticker}:`, err);
+            failedFunds.push(asset.ticker);
+          }
+        }
+
+        if (failedFunds.length > 0) {
+          setError(`Failed to refresh: ${failedFunds.join(", ")}`);
+        }
+
+        router.refresh();
+      } catch (err) {
+        setError("Refresh failed. Please try again.");
+        console.error("[RefreshPricesButton] Error:", err);
       }
-
-      router.refresh();
     });
   }
 

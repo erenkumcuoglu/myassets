@@ -6,7 +6,8 @@
  *  - BIST              → Yahoo Finance
  *  - COMMODITY         → Yahoo Finance → TRY/gram
  *  - FX (USDTRY/EURTRY)→ Yahoo Finance
- *  - FUND_TR           → /api/tefas-proxy (fallback: fundfy.com → cache)
+ *  - FUND_TR           → client-side fetch (tarayıcı → tefas.gov.tr/api/DB/BindHistoryInfo)
+ *                         server-side sadece DB cache okur/yazar
  *
  * All sources fall back to last cached price on failure.
  */
@@ -146,58 +147,26 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Turkish mutual funds — /api/tefas-proxy (primary), fundfy.com (fallback)
+// Turkish mutual funds — server-side sadece DB cache okur
+// Client-side fetch için lib/tefas-client.ts kullanılır
 // ---------------------------------------------------------------------------
 
 async function fetchTefasPrice(asset: Asset): Promise<{ price: number; currency: string }> {
   const fundCode = asset.ticker.toUpperCase();
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
-  
-  // PRIMARY: Internal /api/tefas-proxy route (works when deployed in Turkey/Vercel)
-  if (baseUrl) {
-    try {
-      const url = `${baseUrl}/api/tefas-proxy?symbol=${encodeURIComponent(fundCode)}`;
-      const res = await fetchWithTimeout(url, 10000);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.price > 0) {
-          console.log(`[TEFAS-PROXY] ${fundCode}: ${data.price} TL (date: ${data.date})`);
-          return { price: data.price, currency: "TRY" };
-        }
-      }
-    } catch (err) {
-      console.error(`[TEFAS-PROXY] Failed for ${fundCode}:`, err);
-    }
-  }
-  
-  // FALLBACK 1: fundfy.com
-  try {
-    const url = `https://fundfy.com/api/fund/${fundCode}`;
-    const res = await fetchWithTimeout(url, 6000);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.price > 0) {
-        console.log(`[FUND FY] ${fundCode}: ${data.price} TL`);
-        return { price: data.price, currency: "TRY" };
-      }
-    }
-  } catch (err) {
-    console.error(`[FUND FY] Failed for ${fundCode}:`, err);
-  }
-  
-  // FALLBACK 2: cached DB price
+
+  // FUND_TR fiyatları artık client-side'dan çekiliyor (tarayıcı → tefas.gov.tr).
+  // Server-side bu fonksiyon sadece DB cache'i okur.
   try {
     const cached = await getLastCachedPrice(asset.id);
     if (cached && cached.price > 0) {
-      console.warn(`[CACHE] Using cached price for ${fundCode}: ${cached.price} TL`);
+      console.log(`[FUND_TR] Using cached price for ${fundCode}: ${cached.price} TL`);
       return { price: cached.price, currency: cached.currency };
     }
   } catch (err) {
-    console.error(`[CACHE] Failed to get cached price for ${fundCode}:`, err);
+    console.error(`[CACHE] Failed for ${fundCode}:`, err);
   }
-  
-  // All sources failed - log error but don't throw (app shouldn't crash)
-  console.error(`[FUND_TR] All sources failed for ${fundCode}, returning null`);
+
+  console.warn(`[FUND_TR] No cached price for ${fundCode}`);
   return { price: 0, currency: "TRY" };
 }
 
