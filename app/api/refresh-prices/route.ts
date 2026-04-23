@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { refreshPriceCache } from "@/lib/prices";
+import { refreshPrices } from "@/lib/prices";
 import { initDb } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function POST() {
   try {
     await initDb();
-    await refreshPriceCache();
+    await refreshPrices();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to refresh prices:", error);
