@@ -1,1 +1,8 @@
-{}
+{
+  "app/dashboard/page.tsx -> recharts": {
+    "id": "app/dashboard/page.tsx -> recharts",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_recharts_es6_index_js.js"
+    ]
+  }
+}

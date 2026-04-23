@@ -48,9 +48,17 @@ export async function fetchTefasPriceFromBrowser(
 
       const json = JSON.parse(text);
       const record = json?.data?.[0];
-      if (!record || !record.FIYAT || record.FIYAT <= 0) continue;
+      if (!record || !record.FIYAT) continue;
 
-      return { price: record.FIYAT, date: dateStr };
+      // TEFAS FIYAT can be string with comma as decimal separator
+      const rawPrice = record.FIYAT;
+      const price = typeof rawPrice === "string" 
+        ? Number(rawPrice.replace(",", ".")) 
+        : Number(rawPrice);
+
+      if (Number.isNaN(price) || price <= 0) continue;
+
+      return { price, date: dateStr };
     } catch {
       continue;
     }

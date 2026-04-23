@@ -1,4 +1,6 @@
 {
-  "/api/refresh-prices/route": "app/api/refresh-prices/route.js",
-  "/api/save-tefas-price/route": "app/api/save-tefas-price/route.js"
+  "/portfolio/page": "app/portfolio/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/api/prices/route": "app/api/prices/route.js",
+  "/api/portfolio/route": "app/api/portfolio/route.js"
 }
