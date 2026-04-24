@@ -109,10 +109,13 @@ export async function getTransactions(): Promise<TransactionWithAsset[]> {
 
   const assetMap = new Map(assets?.map(a => [a.id, a]) || []);
 
-  return data?.map((row: any) => ({
-    ...mapTransaction(row),
-    asset: assetMap.get(row.asset_id) || row as any,
-  })) || [];
+  return data?.map((row: any) => {
+    const asset = assetMap.get(row.asset_id);
+    return {
+      ...mapTransaction(row),
+      asset: asset ? mapAsset(asset) : null,
+    };
+  }) || [];
 }
 
 export async function insertAsset(asset: Omit<Asset, "id" | "createdAt">): Promise<Asset> {
