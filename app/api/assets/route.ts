@@ -27,12 +27,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    console.log(`[POST /api/assets] Creating asset: ${ticker}, ${name}, ${assetClass}, ${currency}`);
+
     const asset = await insertAsset({
       ticker: ticker.toUpperCase(),
       name,
       assetClass,
       currency,
     });
+
+    console.log(`[POST /api/assets] Asset created successfully: ${asset.id}`);
 
     return NextResponse.json(asset);
   } catch (error) {
