@@ -176,14 +176,8 @@ export async function insertTransaction(
 }
 
 export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot> {
-  console.log(`[Portfolio] DEBUG: Starting getPortfolioSnapshot`);
   const transactions = await getTransactions();
-  console.log(`[Portfolio] DEBUG: Got ${transactions.length} transactions`);
   const prices = await getLatestPrices();
-  console.log(`[Portfolio] DEBUG: Got ${prices.size} prices`);
-  console.log(`[Portfolio] Fetched ${transactions.length} transactions, ${prices.size} prices`);
-  console.log(`[Portfolio] Transactions:`, JSON.stringify(transactions, null, 2));
-  console.log(`[Portfolio] Prices:`, JSON.stringify(Array.from(prices.entries()), null, 2));
   return await calculatePortfolioSnapshot(transactions, prices);
 }
 
@@ -195,10 +189,10 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
     .select('*')
     .order('fetched_at', { ascending: false });
 
-  if (error) throw error;
-
-  console.log(`[getLatestPrices] Fetched ${data?.length || 0} rows from price_cache`);
-  console.log(`[getLatestPrices] Raw data:`, JSON.stringify(data, null, 2));
+  if (error) {
+    console.error('[getLatestPrices] Supabase error:', error);
+    throw error;
+  }
 
   // Get latest price per asset
   const latestPrices = new Map<number, PriceCache>();
@@ -211,7 +205,6 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
     }
   }
 
-  console.log(`[getLatestPrices] Returning ${latestPrices.size} prices`);
   return latestPrices;
 }
 
