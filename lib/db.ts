@@ -1,354 +1,177 @@
-if (typeof window !== 'undefined') {
-  throw new Error('db.ts must only be used server-side')
-}
-
-import fs from "node:fs";
-import path from "node:path";
-import { createClient } from "@libsql/client";
+import { supabase } from "./supabase";
 import { calculatePortfolioSnapshot } from "@/lib/calculations";
 import type { Asset, PortfolioSnapshot, PriceCache, Transaction, TransactionWithAsset, FxRate } from "@/types";
 
-const dataDirectory = path.join(process.cwd(), "data");
-const databasePath = path.join(dataDirectory, "portfolio.db");
-
-// Create data directory if it doesn't exist
-if (!fs.existsSync(dataDirectory)) {
-  fs.mkdirSync(dataDirectory, { recursive: true });
-}
-
-declare global {
-  var portfolioDb: ReturnType<typeof createClient> | undefined;
-  var schemaInitialized: boolean;
-}
-
-// Lazy database client singleton
-function getDb() {
-  if (!global.portfolioDb) {
-    global.portfolioDb = createClient({
-      url: process.env.DATABASE_URL || "file:/app/data/portfolio.db",
-    });
-  }
-  return global.portfolioDb;
-}
-
-// Initialize schema asynchronously (called on first use)
-let schemaInitPromise: Promise<void> | null = null;
+// Initialize Supabase tables on first use
+let schemaInitialized = false;
 
 async function initializeSchema() {
-  if (global.schemaInitialized) return;
+  if (schemaInitialized) return;
+
+  // Create tables using Supabase SQL (run via SQL editor in Supabase dashboard)
+  console.log('Please ensure tables exist in Supabase: assets, transactions, price_cache, fx_rates');
   
-  if (!fs.existsSync(dataDirectory)) {
-    fs.mkdirSync(dataDirectory, { recursive: true });
-  }
-
-  const db = getDb();
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS assets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ticker TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      asset_class TEXT NOT NULL CHECK(asset_class IN ('BIST', 'NASDAQ', 'FUND_TR', 'FUND_US', 'COMMODITY')),
-      currency TEXT NOT NULL CHECK(currency IN ('TRY', 'USD', 'EUR')),
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-      type TEXT NOT NULL CHECK(type IN ('BUY', 'SELL')),
-      quantity REAL NOT NULL,
-      price REAL NOT NULL,
-      currency TEXT NOT NULL CHECK(currency IN ('TRY', 'USD', 'EUR')),
-      date DATE NOT NULL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Migration: Update transactions table to include EUR in currency constraint
-  try {
-    const result = await db.execute("SELECT sql FROM sqlite_master WHERE name='transactions'");
-    const tableSql = result.rows[0]?.sql as string;
-    if (tableSql && !tableSql.includes("'EUR'")) {
-      console.log("Running migration: Add EUR to transactions currency constraint");
-      await db.execute("PRAGMA foreign_keys=off");
-      await db.execute(`
-        CREATE TABLE transactions_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-          type TEXT NOT NULL CHECK(type IN ('BUY', 'SELL')),
-          quantity REAL NOT NULL,
-          price REAL NOT NULL,
-          currency TEXT NOT NULL CHECK(currency IN ('TRY', 'USD', 'EUR')),
-          date DATE NOT NULL,
-          notes TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      await db.execute(`
-        INSERT INTO transactions_new (id, asset_id, type, quantity, price, currency, date, notes, created_at)
-        SELECT id, asset_id, type, quantity, price, currency, date, notes, created_at FROM transactions
-      `);
-      await db.execute("DROP TABLE transactions");
-      await db.execute("ALTER TABLE transactions_new RENAME TO transactions");
-      await db.execute("PRAGMA foreign_keys=on");
-      console.log("Migration completed successfully");
-    }
-  } catch (error) {
-    console.error("Migration failed:", error);
-    await db.execute("PRAGMA foreign_keys=on");
-  }
-
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS price_cache (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-      price REAL NOT NULL,
-      currency TEXT NOT NULL CHECK(currency IN ('TRY', 'USD', 'EUR')),
-      fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS fx_rates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      pair TEXT NOT NULL UNIQUE,
-      rate REAL NOT NULL,
-      fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  global.schemaInitialized = true;
+  schemaInitialized = true;
 }
 
 async function ensureSchema() {
-  if (!schemaInitPromise) {
-    schemaInitPromise = initializeSchema();
+  if (!supabase) {
+    throw new Error('Supabase client not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.');
   }
-  await schemaInitPromise;
+  if (!schemaInitialized) {
+    await initializeSchema();
+  }
 }
 
-// Export initDb for API routes to call
 export async function initDb() {
-  const dataDir = path.join(process.cwd(), 'data')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-  const db = getDb()
-  await db.execute(`CREATE TABLE IF NOT EXISTS assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT NOT NULL,
-    name TEXT NOT NULL,
-    asset_class TEXT NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'TRY',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`)
-  await db.execute(`CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id INTEGER REFERENCES assets(id),
-    type TEXT NOT NULL,
-    quantity REAL NOT NULL,
-    price REAL NOT NULL,
-    currency TEXT NOT NULL,
-    date DATE NOT NULL,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`)
-  await db.execute(`CREATE TABLE IF NOT EXISTS price_cache (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id INTEGER REFERENCES assets(id),
-    price REAL NOT NULL,
-    currency TEXT NOT NULL,
-    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`)
-  await db.execute(`CREATE TABLE IF NOT EXISTS fx_rates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pair TEXT NOT NULL,
-    rate REAL NOT NULL,
-    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`)
+  await ensureSchema();
 }
 
-function mapAsset(row: Record<string, unknown>): Asset {
+function mapAsset(row: any): Asset {
   return {
-    id: Number(row.id),
-    ticker: String(row.ticker),
-    name: String(row.name),
-    assetClass: row.asset_class as Asset["assetClass"],
-    currency: row.currency as Asset["currency"],
-    createdAt: String(row.created_at),
+    id: row.id,
+    ticker: row.ticker,
+    name: row.name,
+    assetClass: row.asset_class,
+    currency: row.currency,
+    createdAt: row.created_at,
   };
 }
 
-function mapTransaction(row: Record<string, unknown>): Transaction {
+function mapTransaction(row: any): Transaction {
   return {
-    id: Number(row.id),
-    assetId: Number(row.asset_id),
-    type: row.type as Transaction["type"],
-    quantity: Number(row.quantity),
-    price: Number(row.price),
-    currency: row.currency as Transaction["currency"],
-    date: String(row.date),
-    notes: row.notes ? String(row.notes) : null,
-    createdAt: String(row.created_at),
+    id: row.id,
+    assetId: row.asset_id,
+    type: row.type,
+    quantity: row.quantity,
+    price: row.price,
+    currency: row.currency,
+    date: row.date,
+    notes: row.notes,
+    createdAt: row.created_at,
   };
 }
 
-function mapPriceCache(row: Record<string, unknown>): PriceCache {
+function mapPriceCache(row: any): PriceCache {
   return {
-    id: Number(row.id),
-    assetId: Number(row.asset_id),
-    price: Number(row.price),
-    currency: row.currency as PriceCache["currency"],
-    fetchedAt: String(row.fetched_at),
+    id: row.id,
+    assetId: row.asset_id,
+    price: row.price,
+    currency: row.currency,
+    fetchedAt: row.fetched_at,
   };
 }
 
-function mapFxRate(row: Record<string, unknown>): FxRate {
+function mapFxRate(row: any): FxRate {
   return {
-    id: Number(row.id),
-    pair: String(row.pair),
-    rate: Number(row.rate),
-    fetchedAt: String(row.fetched_at),
+    id: row.id,
+    pair: row.pair,
+    rate: row.rate,
+    fetchedAt: row.fetched_at,
   };
 }
 
 export async function getAssets(): Promise<Asset[]> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT id, ticker, name, asset_class, currency, created_at
-          FROM assets
-          ORDER BY ticker ASC`,
-  });
 
-  return result.rows.map(mapAsset);
+  const { data, error } = await supabase
+    .from('assets')
+    .select('*')
+    .order('ticker', { ascending: true });
+
+  if (error) throw error;
+  return data?.map(mapAsset) || [];
 }
 
 export async function getTransactions(): Promise<TransactionWithAsset[]> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT
-           t.id,
-           t.asset_id,
-           t.type,
-           t.quantity,
-           t.price,
-           t.currency,
-           t.date,
-           t.notes,
-           t.created_at,
-           a.id AS joined_asset_id,
-           a.ticker,
-           a.name,
-           a.asset_class,
-           a.currency AS asset_currency,
-           a.created_at AS asset_created_at
-         FROM transactions t
-         INNER JOIN assets a ON a.id = t.asset_id
-         ORDER BY t.date DESC, t.id DESC`,
-  });
 
-  return result.rows.map((row) => ({
+  const { data, error } = await supabase
+    .from('transactions')
+    .select(`
+      *,
+      assets (
+        id,
+        ticker,
+        name,
+        asset_class,
+        currency,
+        created_at
+      )
+    `)
+    .order('date', { ascending: false })
+    .order('id', { ascending: false });
+
+  if (error) throw error;
+
+  return data?.map((row: any) => ({
     ...mapTransaction(row),
-    asset: {
-      id: Number(row.joined_asset_id),
-      ticker: String(row.ticker),
-      name: String(row.name),
-      assetClass: row.asset_class as Asset["assetClass"],
-      currency: row.asset_currency as Asset["currency"],
-      createdAt: String(row.asset_created_at),
-    },
-  }));
+    asset: mapAsset(row.assets),
+  })) || [];
 }
 
 export async function insertAsset(asset: Omit<Asset, "id" | "createdAt">): Promise<Asset> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `INSERT INTO assets (ticker, name, asset_class, currency)
-          VALUES (?, ?, ?, ?)`,
-    args: [asset.ticker, asset.name, asset.assetClass, asset.currency],
-  });
 
-  const insertId = result.lastInsertRowid ? Number(result.lastInsertRowid) : 0;
-  
-  const rowResult = await db.execute({
-    sql: `SELECT id, ticker, name, asset_class, currency, created_at
-          FROM assets
-          WHERE id = ?`,
-    args: [insertId],
-  });
+  const { data, error } = await supabase
+    .from('assets')
+    .insert({
+      ticker: asset.ticker,
+      name: asset.name,
+      asset_class: asset.assetClass,
+      currency: asset.currency,
+    })
+    .select()
+    .single();
 
-  return mapAsset(rowResult.rows[0]);
+  if (error) throw error;
+  return mapAsset(data);
 }
 
 export async function insertTransaction(
   input: Omit<Transaction, "id" | "createdAt">,
 ): Promise<TransactionWithAsset> {
   await ensureSchema();
-  
-  const db = getDb();
-  const assetResult = await db.execute({
-    sql: `SELECT id, ticker, name, asset_class, currency, created_at
-          FROM assets
-          WHERE id = ?`,
-    args: [input.assetId],
-  });
 
-  const asset = assetResult.rows[0];
-  if (!asset) {
+  const { data: assetData, error: assetError } = await supabase
+    .from('assets')
+    .select('*')
+    .eq('id', input.assetId)
+    .single();
+
+  if (assetError || !assetData) {
     throw new Error("Selected asset does not exist.");
   }
 
-  const result = await db.execute({
-    sql: `INSERT INTO transactions (asset_id, type, quantity, price, currency, date, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [input.assetId, input.type, input.quantity, input.price, input.currency, input.date, input.notes],
-  });
+  const { data, error } = await supabase
+    .from('transactions')
+    .insert({
+      asset_id: input.assetId,
+      type: input.type,
+      quantity: input.quantity,
+      price: input.price,
+      currency: input.currency,
+      date: input.date,
+      notes: input.notes,
+    })
+    .select(`
+      *,
+      assets (
+        id,
+        ticker,
+        name,
+        asset_class,
+        currency,
+        created_at
+      )
+    `)
+    .single();
 
-  const insertId = result.lastInsertRowid ? Number(result.lastInsertRowid) : 0;
-  
-  const rowResult = await db.execute({
-    sql: `SELECT
-           t.id,
-           t.asset_id,
-           t.type,
-           t.quantity,
-           t.price,
-           t.currency,
-           t.date,
-           t.notes,
-           t.created_at,
-           a.id AS joined_asset_id,
-           a.ticker,
-           a.name,
-           a.asset_class,
-           a.currency AS asset_currency,
-           a.created_at AS asset_created_at
-         FROM transactions t
-         INNER JOIN assets a ON a.id = t.asset_id
-         WHERE t.id = ?`,
-    args: [insertId],
-  });
+  if (error) throw error;
 
-  const row = rowResult.rows[0];
   return {
-    ...mapTransaction(row),
-    asset: {
-      id: Number(row.joined_asset_id),
-      ticker: String(row.ticker),
-      name: String(row.name),
-      assetClass: row.asset_class as Asset["assetClass"],
-      currency: row.asset_currency as Asset["currency"],
-      createdAt: String(row.asset_created_at),
-    },
+    ...mapTransaction(data),
+    asset: mapAsset(data.assets),
   };
 }
 
@@ -360,122 +183,119 @@ export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot> {
 
 export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT pc.id, pc.asset_id, pc.price, pc.currency, pc.fetched_at
-          FROM price_cache pc
-          INNER JOIN (
-            SELECT asset_id, MAX(fetched_at) AS max_fetched_at
-            FROM price_cache
-            GROUP BY asset_id
-          ) latest
-            ON latest.asset_id = pc.asset_id
-           AND latest.max_fetched_at = pc.fetched_at`,
-  });
 
-  return new Map(result.rows.map((row) => {
-    const price = mapPriceCache(row);
-    return [price.assetId, price] as const;
-  }));
+  const { data, error } = await supabase
+    .from('price_cache')
+    .select('*')
+    .order('fetched_at', { ascending: false });
+
+  if (error) throw error;
+
+  // Get latest price per asset
+  const latestPrices = new Map<number, PriceCache>();
+  const seen = new Set<number>();
+
+  for (const row of data || []) {
+    if (!seen.has(row.asset_id)) {
+      latestPrices.set(row.asset_id, mapPriceCache(row));
+      seen.add(row.asset_id);
+    }
+  }
+
+  return latestPrices;
 }
 
 export async function getLastCachedPrice(assetId: number): Promise<PriceCache | null> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT id, asset_id, price, currency, fetched_at
-          FROM price_cache
-          WHERE asset_id = ?
-          ORDER BY fetched_at DESC, id DESC
-          LIMIT 1`,
-    args: [assetId],
-  });
 
-  if (result.rows.length === 0) return null;
-  return mapPriceCache(result.rows[0]);
+  const { data, error } = await supabase
+    .from('price_cache')
+    .select('*')
+    .eq('asset_id', assetId)
+    .order('fetched_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) return null;
+  return mapPriceCache(data);
 }
 
 export async function insertPriceCacheEntry(assetId: number, price: number, currency: "TRY" | "USD" | "EUR") {
   await ensureSchema();
 
-  const db = getDb();
-  await db.execute({
-    sql: `INSERT INTO price_cache (asset_id, price, currency, fetched_at)
-          VALUES (?, ?, ?, datetime('now'))`,
-    args: [assetId, price, currency],
-  });
+  const { error } = await supabase
+    .from('price_cache')
+    .insert({
+      asset_id: assetId,
+      price: price,
+      currency: currency,
+    });
+
+  if (error) throw error;
 }
 
 export async function clearPriceCache() {
   await ensureSchema();
 
-  const db = getDb();
-  await db.execute({
-    sql: `DELETE FROM price_cache`,
-  });
+  const { error } = await supabase
+    .from('price_cache')
+    .delete()
+    .neq('id', 0); // Delete all
+
+  if (error) throw error;
 }
 
 export async function updateCommodityAssetCurrencies() {
   await ensureSchema();
 
-  const db = getDb();
-  await db.execute({
-    sql: `UPDATE assets SET currency = 'TRY' WHERE asset_class = 'COMMODITY'`,
-  });
+  const { error } = await supabase
+    .from('assets')
+    .update({ currency: 'TRY' })
+    .eq('asset_class', 'COMMODITY');
+
+  if (error) throw error;
 }
 
 export async function getFxRates(): Promise<FxRate[]> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT id, pair, rate, fetched_at
-          FROM fx_rates
-          ORDER BY pair ASC`,
-  });
 
-  return result.rows.map(mapFxRate);
+  const { data, error } = await supabase
+    .from('fx_rates')
+    .select('*')
+    .order('pair', { ascending: true });
+
+  if (error) throw error;
+  return data?.map(mapFxRate) || [];
 }
 
 export async function getFxRate(pair: string): Promise<FxRate | null> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT id, pair, rate, fetched_at
-          FROM fx_rates
-          WHERE pair = ?
-          ORDER BY fetched_at DESC, id DESC
-          LIMIT 1`,
-    args: [pair],
-  });
 
-  if (result.rows.length === 0) return null;
-  return mapFxRate(result.rows[0]);
+  const { data, error } = await supabase
+    .from('fx_rates')
+    .select('*')
+    .eq('pair', pair)
+    .order('fetched_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) return null;
+  return mapFxRate(data);
 }
 
 export async function insertFxRate(pair: string, rate: number): Promise<FxRate> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `INSERT INTO fx_rates (pair, rate)
-          VALUES (?, ?)`,
-    args: [pair, rate],
-  });
 
-  const insertId = result.lastInsertRowid ? Number(result.lastInsertRowid) : 0;
-  
-  const rowResult = await db.execute({
-    sql: `SELECT id, pair, rate, fetched_at
-          FROM fx_rates
-          WHERE id = ?`,
-    args: [insertId],
-  });
+  const { data, error } = await supabase
+    .from('fx_rates')
+    .insert({ pair, rate })
+    .select()
+    .single();
 
-  return mapFxRate(rowResult.rows[0]);
+  if (error) throw error;
+  return mapFxRate(data);
 }
 
 export async function updateAsset(
@@ -483,73 +303,49 @@ export async function updateAsset(
   updates: Partial<Omit<Asset, "id" | "createdAt">>,
 ): Promise<Asset> {
   await ensureSchema();
-  
-  const db = getDb();
-  const fields: string[] = [];
-  const values: (string | number)[] = [];
 
-  if (updates.name !== undefined) {
-    fields.push("name = ?");
-    values.push(updates.name);
-  }
-  if (updates.assetClass !== undefined) {
-    fields.push("asset_class = ?");
-    values.push(updates.assetClass);
-  }
-  if (updates.currency !== undefined) {
-    fields.push("currency = ?");
-    values.push(updates.currency);
-  }
+  const updateData: any = {};
+  if (updates.name !== undefined) updateData.name = updates.name;
+  if (updates.assetClass !== undefined) updateData.asset_class = updates.assetClass;
+  if (updates.currency !== undefined) updateData.currency = updates.currency;
 
-  if (fields.length === 0) {
+  if (Object.keys(updateData).length === 0) {
     throw new Error("No fields to update");
   }
 
-  values.push(id);
+  const { data, error } = await supabase
+    .from('assets')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
 
-  await db.execute({
-    sql: `UPDATE assets SET ${fields.join(", ")} WHERE id = ?`,
-    args: values,
-  });
-
-  const result = await db.execute({
-    sql: `SELECT id, ticker, name, asset_class, currency, created_at
-          FROM assets
-          WHERE id = ?`,
-    args: [id],
-  });
-
-  return mapAsset(result.rows[0]);
+  if (error) throw error;
+  return mapAsset(data);
 }
 
 export async function deleteAsset(id: number): Promise<void> {
   await ensureSchema();
-  
-  const db = getDb();
-  
-  // Delete associated transactions first (cascading)
-  await db.execute({
-    sql: `DELETE FROM transactions WHERE asset_id = ?`,
-    args: [id],
-  });
-  
-  // Delete the asset
-  await db.execute({
-    sql: `DELETE FROM assets WHERE id = ?`,
-    args: [id],
-  });
+
+  // Transactions will cascade delete due to FK constraint
+  const { error } = await supabase
+    .from('assets')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }
 
 export async function getTransactionCountByAsset(assetId: number): Promise<number> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT COUNT(*) as count FROM transactions WHERE asset_id = ?`,
-    args: [assetId],
-  });
 
-  return Number(result.rows[0].count);
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('asset_id', assetId);
+
+  if (error) throw error;
+  return data ? data.length : 0;
 }
 
 export async function updateTransaction(
@@ -557,104 +353,73 @@ export async function updateTransaction(
   updates: Partial<Omit<Transaction, "id" | "createdAt">>,
 ): Promise<TransactionWithAsset> {
   await ensureSchema();
-  
-  const db = getDb();
-  const fields: string[] = [];
-  const values: (string | number | null)[] = [];
 
-  if (updates.type !== undefined) {
-    fields.push("type = ?");
-    values.push(updates.type);
-  }
-  if (updates.quantity !== undefined) {
-    fields.push("quantity = ?");
-    values.push(updates.quantity);
-  }
-  if (updates.price !== undefined) {
-    fields.push("price = ?");
-    values.push(updates.price);
-  }
-  if (updates.currency !== undefined) {
-    fields.push("currency = ?");
-    values.push(updates.currency);
-  }
-  if (updates.date !== undefined) {
-    fields.push("date = ?");
-    values.push(updates.date);
-  }
-  if (updates.notes !== undefined) {
-    fields.push("notes = ?");
-    values.push(updates.notes);
-  }
+  const updateData: any = {};
+  if (updates.type !== undefined) updateData.type = updates.type;
+  if (updates.quantity !== undefined) updateData.quantity = updates.quantity;
+  if (updates.price !== undefined) updateData.price = updates.price;
+  if (updates.currency !== undefined) updateData.currency = updates.currency;
+  if (updates.date !== undefined) updateData.date = updates.date;
+  if (updates.notes !== undefined) updateData.notes = updates.notes;
 
-  if (fields.length === 0) {
+  if (Object.keys(updateData).length === 0) {
     throw new Error("No fields to update");
   }
 
-  values.push(id);
+  const { data, error } = await supabase
+    .from('transactions')
+    .update(updateData)
+    .eq('id', id)
+    .select(`
+      *,
+      assets (
+        id,
+        ticker,
+        name,
+        asset_class,
+        currency,
+        created_at
+      )
+    `)
+    .single();
 
-  await db.execute({
-    sql: `UPDATE transactions SET ${fields.join(", ")} WHERE id = ?`,
-    args: values,
-  });
+  if (error) throw error;
 
-  const result = await db.execute({
-    sql: `SELECT
-           t.id,
-           t.asset_id,
-           t.type,
-           t.quantity,
-           t.price,
-           t.currency,
-           t.date,
-           t.notes,
-           t.created_at,
-           a.id AS joined_asset_id,
-           a.ticker,
-           a.name,
-           a.asset_class,
-           a.currency AS asset_currency,
-           a.created_at AS asset_created_at
-         FROM transactions t
-         INNER JOIN assets a ON a.id = t.asset_id
-         WHERE t.id = ?`,
-    args: [id],
-  });
-
-  const row = result.rows[0];
   return {
-    ...mapTransaction(row),
-    asset: {
-      id: Number(row.joined_asset_id),
-      ticker: String(row.ticker),
-      name: String(row.name),
-      assetClass: row.asset_class as Asset["assetClass"],
-      currency: row.asset_currency as Asset["currency"],
-      createdAt: String(row.asset_created_at),
-    },
+    ...mapTransaction(data),
+    asset: mapAsset(data.assets),
   };
 }
 
 export async function deleteTransaction(id: number): Promise<void> {
   await ensureSchema();
-  
-  const db = getDb();
-  await db.execute({
-    sql: `DELETE FROM transactions WHERE id = ?`,
-    args: [id],
-  });
+
+  const { error } = await supabase
+    .from('transactions')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }
 
 export async function getPositionQuantity(assetId: number): Promise<number> {
   await ensureSchema();
-  
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN quantity ELSE -quantity END), 0) as quantity
-          FROM transactions
-          WHERE asset_id = ?`,
-    args: [assetId],
-  });
 
-  return Number(result.rows[0].quantity);
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('quantity, type')
+    .eq('asset_id', assetId);
+
+  if (error) throw error;
+
+  let quantity = 0;
+  for (const row of data || []) {
+    if (row.type === 'BUY') {
+      quantity += row.quantity;
+    } else {
+      quantity -= row.quantity;
+    }
+  }
+
+  return quantity;
 }
