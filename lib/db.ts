@@ -97,8 +97,6 @@ export async function getTransactions(): Promise<TransactionWithAsset[]> {
     throw error;
   }
 
-  console.log(`[getTransactions] Fetched ${data?.length || 0} transactions`);
-
   // Fetch assets separately to avoid join issues
   const { data: assets, error: assetsError } = await supabase
     .from('assets')
@@ -200,8 +198,6 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
     throw error;
   }
 
-  console.log(`[getLatestPrices] Fetched ${data?.length || 0} price_cache rows`);
-
   // Get latest price per asset
   const latestPrices = new Map<number, PriceCache>();
   const seen = new Set<number>();
@@ -213,7 +209,6 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
     }
   }
 
-  console.log(`[getLatestPrices] Returning ${latestPrices.size} prices`);
   return latestPrices;
 }
 
