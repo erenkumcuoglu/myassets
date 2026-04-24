@@ -88,25 +88,20 @@ export async function getTransactions(): Promise<TransactionWithAsset[]> {
 
   const { data, error } = await supabase
     .from('transactions')
-    .select(`
-      *,
-      assets (
-        id,
-        ticker,
-        name,
-        asset_class,
-        currency,
-        created_at
-      )
-    `)
+    .select('*')
     .order('date', { ascending: false })
     .order('id', { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error('[getTransactions] Supabase error:', error);
+    throw error;
+  }
+
+  console.log(`[getTransactions] Fetched ${data?.length || 0} transactions`);
 
   return data?.map((row: any) => ({
     ...mapTransaction(row),
-    asset: mapAsset(row.assets),
+    asset: row as any, // Temporarily disable asset join for debugging
   })) || [];
 }
 
