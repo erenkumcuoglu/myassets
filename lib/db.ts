@@ -99,9 +99,21 @@ export async function getTransactions(): Promise<TransactionWithAsset[]> {
 
   console.log(`[getTransactions] Fetched ${data?.length || 0} transactions`);
 
+  // Fetch assets separately to avoid join issues
+  const { data: assets, error: assetsError } = await supabase
+    .from('assets')
+    .select('*');
+
+  if (assetsError) {
+    console.error('[getTransactions] Assets fetch error:', assetsError);
+    throw assetsError;
+  }
+
+  const assetMap = new Map(assets?.map(a => [a.id, a]) || []);
+
   return data?.map((row: any) => ({
     ...mapTransaction(row),
-    asset: row as any, // Temporarily disable asset join for debugging
+    asset: assetMap.get(row.asset_id) || row as any,
   })) || [];
 }
 
@@ -181,13 +193,14 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
 
   const { data, error } = await supabase
     .from('price_cache')
-    .select('*')
-    .order('fetched_at', { ascending: false });
+    .select('*');
 
   if (error) {
     console.error('[getLatestPrices] Supabase error:', error);
     throw error;
   }
+
+  console.log(`[getLatestPrices] Fetched ${data?.length || 0} price_cache rows`);
 
   // Get latest price per asset
   const latestPrices = new Map<number, PriceCache>();
@@ -200,6 +213,7 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
     }
   }
 
+  console.log(`[getLatestPrices] Returning ${latestPrices.size} prices`);
   return latestPrices;
 }
 
