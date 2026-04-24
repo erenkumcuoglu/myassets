@@ -194,6 +194,9 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
 
   if (error) throw error;
 
+  console.log(`[getLatestPrices] Fetched ${data?.length || 0} rows from price_cache`);
+  console.log(`[getLatestPrices] Raw data:`, JSON.stringify(data, null, 2));
+
   // Get latest price per asset
   const latestPrices = new Map<number, PriceCache>();
   const seen = new Set<number>();
@@ -205,6 +208,7 @@ export async function getLatestPrices(): Promise<Map<number, PriceCache>> {
     }
   }
 
+  console.log(`[getLatestPrices] Returning ${latestPrices.size} prices`);
   return latestPrices;
 }
 
