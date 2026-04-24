@@ -45,7 +45,7 @@ async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
 }
 
 // Yahoo Finance fetch
-async function fetchYahooPrice(symbol: string): Promise<number> {
+export async function fetchYahooPrice(symbol: string): Promise<number> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -151,7 +151,7 @@ async function fetchCommodityPriceTryPerGram(asset: Asset): Promise<number> {
 // Client-side fetch için lib/tefas-client.ts kullanılır
 // ---------------------------------------------------------------------------
 
-async function fetchTefasPrice(asset: Asset): Promise<{ price: number; currency: string }> {
+export async function fetchTefasPrice(asset: Asset): Promise<{ price: number; currency: string }> {
   const fundCode = asset.ticker.toUpperCase();
 
   // FUND_TR fiyatları artık client-side'dan çekiliyor (tarayıcı → tefas.gov.tr).
@@ -217,6 +217,9 @@ async function fetchLivePrice(
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+export const fetchPrice = fetchLivePrice;
+export const refreshPriceCache = refreshPrices;
+
 export async function refreshPrices(): Promise<Map<number, { price: number; currency: string }>> {
   const assets = await getAssets();
   const results = new Map<number, { price: number; currency: string }>();
@@ -227,7 +230,7 @@ export async function refreshPrices(): Promise<Map<number, { price: number; curr
         const { price, currency } = await fetchLivePrice(asset);
         results.set(asset.id, { price, currency });
         if (price > 0) {
-          await insertPriceCacheEntry(asset.id, price, currency);
+          await insertPriceCacheEntry(asset.id, price, currency as "TRY" | "USD" | "EUR");
           console.log(`[prices] Cached ${asset.ticker}: ${price} ${currency}`);
         }
       } catch (err) {
