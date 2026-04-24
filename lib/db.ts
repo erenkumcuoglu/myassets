@@ -111,11 +111,15 @@ export async function getTransactions(): Promise<TransactionWithAsset[]> {
 
   return data?.map((row: any) => {
     const asset = assetMap.get(row.asset_id);
+    if (!asset) {
+      console.warn(`[getTransactions] Asset not found for transaction ${row.id}, asset_id: ${row.asset_id}`);
+      return null;
+    }
     return {
       ...mapTransaction(row),
-      asset: asset ? mapAsset(asset) : null,
+      asset: mapAsset(asset),
     };
-  }) || [];
+  }).filter((t): t is TransactionWithAsset => t !== null) || [];
 }
 
 export async function insertAsset(asset: Omit<Asset, "id" | "createdAt">): Promise<Asset> {
