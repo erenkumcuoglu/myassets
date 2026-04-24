@@ -3,7 +3,7 @@ export const maxDuration = 10;
 
 import { NextResponse } from "next/server";
 import type { AssetClass } from "@/types";
-import { initDb, getLastCachedPrice, getAssets } from "@/lib/db";
+import { initDb, getLastCachedPrice, getAssets, insertPriceCacheEntry } from "@/lib/db";
 import { fetchYahooPrice, fetchTefasPrice } from "@/lib/prices";
 
 export const runtime = "nodejs";
@@ -121,8 +121,20 @@ export async function GET(request: Request) {
       } catch (e) {
         console.warn('[API] Failed to fetch cached price:', e);
       }
-      
+
       return NextResponse.json({ price: null, currency, error: 'Price unavailable' }, { status: 200 });
+    }
+
+    // Cache the fetched price
+    try {
+      const assets = await getAssets();
+      const asset = assets.find(a => a.ticker.toUpperCase() === ticker.toUpperCase());
+      if (asset && price > 0) {
+        await insertPriceCacheEntry(asset.id, price, currency as "TRY" | "USD" | "EUR");
+        console.log(`[API] Cached price ${price} ${currency} for ${ticker}`);
+      }
+    } catch (e) {
+      console.warn('[API] Failed to cache price:', e);
     }
 
     // Return raw number with full decimal precision - do NOT round or truncate
