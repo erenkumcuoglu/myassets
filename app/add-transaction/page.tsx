@@ -156,6 +156,19 @@ export default function AddTransactionPage() {
         const assetData = await assetResponse.json();
         assetId = assetData.id;
 
+        // Verify asset was created by fetching it
+        const verifyResponse = await fetch("/api/assets");
+        if (verifyResponse.ok) {
+          const assets = await verifyResponse.json();
+          const createdAsset = assets.find((a: any) => a.ticker === formData.ticker.toUpperCase());
+          if (!createdAsset) {
+            setErrors({ submit: "Varlık oluşturuldu ancak doğrulanamadı" });
+            setLoading(false);
+            return;
+          }
+          assetId = createdAsset.id;
+        }
+
         // Fetch current price for new asset and cache it
         try {
           await fetch(`/api/price?ticker=${formData.ticker}&assetClass=${formData.assetClass}`);
