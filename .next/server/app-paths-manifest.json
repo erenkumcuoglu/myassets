@@ -1,11 +1,5 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
   "/dashboard/page": "app/dashboard/page.js",
   "/transactions/page": "app/transactions/page.js",
-  "/api/portfolio/route": "app/api/portfolio/route.js",
-  "/api/assets/route": "app/api/assets/route.js",
-  "/api/prices/route": "app/api/prices/route.js",
-  "/favicon.ico/route": "app/favicon.ico/route.js",
-  "/portfolio/page": "app/portfolio/page.js",
-  "/api/transactions/route": "app/api/transactions/route.js"
+  "/portfolio/page": "app/portfolio/page.js"
 }

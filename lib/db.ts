@@ -178,6 +178,9 @@ export async function insertTransaction(
 export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot> {
   const transactions = await getTransactions();
   const prices = await getLatestPrices();
+  console.log(`[Portfolio] Fetched ${transactions.length} transactions, ${prices.size} prices`);
+  console.log(`[Portfolio] Transactions:`, JSON.stringify(transactions, null, 2));
+  console.log(`[Portfolio] Prices:`, JSON.stringify(Array.from(prices.entries()), null, 2));
   return await calculatePortfolioSnapshot(transactions, prices);
 }
 
