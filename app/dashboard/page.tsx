@@ -7,6 +7,7 @@ import nextDynamic from "next/dynamic";
 import { CardSkeleton, ChartSkeleton, TableSkeleton } from "@/components/skeleton";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { formatNumberWithCommas } from "@/lib/format";
+import { fetchTefasPriceFromBrowser } from "@/lib/tefas-client";
 import type { AssetClass, Position, PortfolioSnapshot } from "@/types";
 
 const PieChart = nextDynamic(() => import('recharts').then(m => m.PieChart), { ssr: false });
@@ -85,7 +86,33 @@ function DashboardContent() {
   const handleRefreshPrices = async () => {
     setRefreshing(true);
     try {
+      // Fetch server-side prices (NASDAQ, BIST, COMMODITY)
       await fetch("/api/refresh-prices", { method: "POST" });
+
+      // Fetch TEFAS fund prices from browser
+      const tefasPositions = snapshot?.positions?.filter(p => p.asset.assetClass === "FUND_TR") || [];
+      const tefasPricePromises = tefasPositions.map(async (position) => {
+        try {
+          const result = await fetchTefasPriceFromBrowser(position.asset.ticker);
+          if (result) {
+            // Update price cache via API
+            await fetch("/api/price", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ticker: position.asset.ticker,
+                price: result.price,
+                currency: "TRY",
+                assetClass: "FUND_TR"
+              })
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to fetch TEFAS price for ${position.asset.ticker}:`, error);
+        }
+      });
+
+      await Promise.all(tefasPricePromises);
       await fetchSnapshot();
     } catch (error) {
       console.error("Failed to refresh prices:", error);
