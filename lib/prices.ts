@@ -131,7 +131,14 @@ export async function fetchEurTryRate(): Promise<number> {
 // Commodity symbol mapping
 const COMMODITY_YAHOO_MAP: Record<string, string> = {
   GOLD: "GC=F",
+  XAU: "GC=F",
+  ALTIN: "GC=F",
+  GAU: "GC=F",
   SILVER: "SI=F",
+  XAG: "SI=F",
+  GUMUS: "SI=F",
+  AUG: "SI=F",
+  GUM: "SI=F",
   PLATINUM: "PL=F",
   OIL_WTI: "CL=F",
   OIL_BRENT: "BZ=F",
